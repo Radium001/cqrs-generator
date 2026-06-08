@@ -1,0 +1,36 @@
+﻿<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CqrsGenerator.Gui.ViewModels.Generators"
+             xmlns:shared="using:CqrsGenerator.Gui.Views.Shared"
+             x:Class="CqrsGenerator.Gui.Views.CreateFeatureRootSessionView"
+             x:DataType="vm:CreateFeatureRootSessionViewModel">
+  <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <StackPanel Spacing="16">
+      <Border Padding="14"
+              Background="{DynamicResource PanelBackgroundBrush}"
+              BorderBrush="{DynamicResource BorderBrush}"
+              BorderThickness="1"
+              CornerRadius="6">
+        <Grid ColumnDefinitions="*,*"
+              ColumnSpacing="16">
+          <Grid RowDefinitions="Auto,Auto,Auto"
+                RowSpacing="8"
+                HorizontalAlignment="Stretch">
+            <TextBlock Text="Feature name"
+                       FontWeight="SemiBold" />
+            <TextBox Grid.Row="1"
+                     Watermark="e.g. Users"
+                     Text="{Binding FeaturePath, Mode=TwoWay}"
+                     HorizontalAlignment="Stretch" />
+            <CheckBox Grid.Row="2"
+                      Content="Create web feature"
+                      IsChecked="{Binding CreateWebFeature}" />
+          </Grid>
+
+          <shared:SubfolderPickerField Grid.Column="1"
+                                       DataContext="{Binding SubfolderPicker}" />
+        </Grid>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

@@ -1,0 +1,25 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CqrsGenerator.Gui.ViewModels"
+             x:Class="CqrsGenerator.Gui.Views.Shared.AutoItemStatus"
+             x:DataType="vm:AutoItemStatusViewModel">
+  <Border BorderThickness="1.5"
+          CornerRadius="4"
+          Padding="10,6"
+          BorderBrush="{DynamicResource BorderBrush}"
+          Background="{DynamicResource PanelMutedBackgroundBrush}">
+    <StackPanel Orientation="Horizontal"
+                Spacing="8">
+      <TextBlock Text="{Binding DisplayText}"
+                 FontWeight="SemiBold"
+                 IsVisible="{Binding IsCreated}"
+                 Foreground="{DynamicResource TextCreateBrush}" />
+      <TextBlock Text="{Binding DisplayText}"
+                 FontWeight="SemiBold"
+                 IsVisible="{Binding IsModified}"
+                 Foreground="{DynamicResource TextUpdateBrush}" />
+      <TextBlock Text="{Binding DescriptionText}"
+                 Foreground="{DynamicResource TextMutedBrush}" />
+    </StackPanel>
+  </Border>
+</UserControl>

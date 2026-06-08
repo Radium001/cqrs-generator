@@ -1,0 +1,10 @@
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace {{ namespace }}
+{
+    public interface {{ query_service_interface }}
+    {
+{{ if has_method }}        {{ method_return_type }} {{ method_name }}({{ method_parameters }});
+{{ end }}    }
+}

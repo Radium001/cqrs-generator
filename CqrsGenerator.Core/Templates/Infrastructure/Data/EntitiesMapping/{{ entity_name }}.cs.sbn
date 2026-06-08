@@ -1,0 +1,29 @@
+using Domain.Interfaces.Entities;
+using Infrastructure.Data.IdTracking;
+using Entity = {{ domain_namespace }}.{{ entity_name }};
+
+namespace {{ namespace }}
+{
+    public partial class {{ entity_name }} : IEfEntity
+    {
+        public {{ entity_name }}()
+        {
+        }
+
+        public {{ entity_name }}(Entity entity)
+            : this()
+        {
+            this.Id = entity.Id;
+{{ if has_properties }}{{ constructor_assignments }}
+{{ end }}        }
+
+        public Entity ToEntity()
+        {
+            var entity = new Entity();
+            ((IBaseEntity)entity).SetId(this.Id);
+{{ if has_properties }}{{ toentity_assignments }}
+{{ end }}
+            return entity;
+        }
+    }
+}

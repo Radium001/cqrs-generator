@@ -1,0 +1,7 @@
+namespace {{ namespace }}
+{
+    public class {{ dto_type }}
+    {
+{{ if has_properties }}{{ properties_block }}
+{{ end }}    }
+}

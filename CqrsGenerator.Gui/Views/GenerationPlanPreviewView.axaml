@@ -1,0 +1,160 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:viewModels="using:CqrsGenerator.Gui.ViewModels"
+              xmlns:views="using:CqrsGenerator.Gui.Views"
+             x:Class="CqrsGenerator.Gui.Views.GenerationPlanPreviewView"
+             x:DataType="viewModels:GenerationPlanPreviewViewModel">
+
+  <Border Padding="16"
+          Background="{DynamicResource PanelBackgroundBrush}"
+          BorderBrush="{DynamicResource BorderBrush}"
+          BorderThickness="1"
+          CornerRadius="8">
+    <Grid RowDefinitions="Auto,*,4,*"
+          RowSpacing="4">
+      <Grid ColumnDefinitions="Auto,*"
+            VerticalAlignment="Center">
+        <TextBlock Text="Plan"
+                   FontSize="18"
+                   FontWeight="SemiBold"
+                   VerticalAlignment="Center" />
+
+        <ItemsControl Grid.Column="1"
+                      ItemsSource="{Binding SummaryItems}"
+                      HorizontalAlignment="Right"
+                      VerticalAlignment="Center">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <WrapPanel ItemSpacing="8"
+                         LineSpacing="8" />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="viewModels:PreviewSummaryItemViewModel">
+              <Border Padding="8,4"
+                      Background="{DynamicResource PanelBackgroundBrush}"
+                      BorderBrush="{DynamicResource SoftBorderBrush}"
+                      BorderThickness="1"
+                      CornerRadius="999">
+                <TextBlock Foreground="{DynamicResource TextSecondaryBrush}">
+                  <Run Text="{Binding Label}" />
+                  <Run Text=" " />
+                  <Run Text="{Binding Value}" />
+                </TextBlock>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </Grid>
+
+              <Border Grid.Row="1"
+                      Padding="12"
+                      Background="{DynamicResource PanelBackgroundBrush}"
+              BorderBrush="{DynamicResource SoftBorderBrush}"
+              BorderThickness="1"
+              CornerRadius="6">
+        <Grid RowDefinitions="Auto,*"
+              RowSpacing="8">
+          <TextBlock Text="Plan Explorer"
+                     FontWeight="SemiBold"
+                     Foreground="{DynamicResource TextPrimaryBrush}" />
+
+          <TextBlock Grid.Row="1"
+                     Text="{Binding EmptyStateText}"
+                     Foreground="{DynamicResource TextSecondaryBrush}"
+                     IsVisible="{Binding ShowEmptyState}" />
+
+          <TreeView Grid.Row="1"
+                    ItemsSource="{Binding RootNodes}"
+                    SelectedItem="{Binding SelectedPlanNode, Mode=TwoWay}"
+                    IsVisible="{Binding HasPlan}">
+            <TreeView.Styles>
+              <Style Selector="TreeViewItem">
+                <Setter Property="IsExpanded" Value="True" />
+                <Setter Property="Padding" Value="4,0" />
+                <Setter Property="MinHeight" Value="20" />
+              </Style>
+              <Style Selector="TextBlock.Created">
+                <Setter Property="Foreground" Value="{DynamicResource TextCreateBrush}" />
+              </Style>
+              <Style Selector="TextBlock.Modified">
+                <Setter Property="Foreground" Value="{DynamicResource TextUpdateBrush}" />
+              </Style>
+              <Style Selector="TextBlock.Deleted">
+                <Setter Property="Foreground" Value="{DynamicResource TextConflictBrush}" />
+              </Style>
+              <Style Selector="TextBlock.Conflict">
+                <Setter Property="Foreground" Value="{DynamicResource TextConflictBrush}" />
+              </Style>
+            </TreeView.Styles>
+            <TreeView.ItemTemplate>
+              <TreeDataTemplate DataType="viewModels:PlanTreeNodeViewModel"
+                                x:DataType="viewModels:PlanTreeNodeViewModel"
+                                ItemsSource="{Binding Children}">
+                <TextBlock Text="{Binding DisplayName}"
+                           Classes.Created="{Binding IsCreateOperation}"
+                           Classes.Modified="{Binding IsUpdateOperation}"
+                           Classes.Deleted="{Binding IsDeleteOperation}"
+                           Classes.Conflict="{Binding IsConflictOperation}" />
+              </TreeDataTemplate>
+            </TreeView.ItemTemplate>
+          </TreeView>
+        </Grid>
+      </Border>
+
+      <GridSplitter Grid.Row="2"
+                    ResizeDirection="Rows"
+                    Background="Transparent" />
+
+      <Border Grid.Row="3"
+              Padding="12"
+              Background="{DynamicResource PanelBackgroundBrush}"
+              BorderBrush="{DynamicResource SoftBorderBrush}"
+              BorderThickness="1"
+              CornerRadius="6">
+        <Grid RowDefinitions="Auto,*"
+              RowSpacing="8">
+          <StackPanel Spacing="2">
+            <TextBlock Text="Code Preview"
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource TextPrimaryBrush}" />
+            <TextBlock Text="{Binding SelectedPreview.RelativePath}"
+                       Foreground="{DynamicResource TextMutedBrush}"
+                       TextTrimming="CharacterEllipsis" />
+          </StackPanel>
+
+          <Grid Grid.Row="1">
+            <TextBlock Text="{Binding SelectedPreview.Content}"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
+                       TextWrapping="Wrap"
+                       IsVisible="{Binding SelectedPreview.IsEmpty}" />
+
+            <views:FilePreviewView DataContext="{Binding SelectedPreview}"
+                                   IsVisible="{Binding IsCreatedFileOrUpdatedFile}" />
+
+            <StackPanel Spacing="8"
+                        IsVisible="{Binding SelectedPreview.IsConflict}">
+              <TextBlock Text="Conflict"
+                         FontWeight="SemiBold"
+                         Foreground="{DynamicResource TextConflictBrush}" />
+              <ItemsControl ItemsSource="{Binding SelectedPreview.Messages}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="x:String">
+                    <TextBlock Text="{Binding .}"
+                               TextWrapping="Wrap"
+                               Foreground="{DynamicResource TextConflictBrush}" />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+
+            <TextBlock Text="{Binding SelectedPreview.Content}"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
+                       TextWrapping="Wrap"
+                       IsVisible="{Binding SelectedPreview.IsDirectory}" />
+          </Grid>
+        </Grid>
+      </Border>
+    </Grid>
+  </Border>
+</UserControl>

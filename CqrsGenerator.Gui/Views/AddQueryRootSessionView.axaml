@@ -1,0 +1,133 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:viewModels="using:CqrsGenerator.Gui.ViewModels"
+             xmlns:shared="using:CqrsGenerator.Gui.Views.Shared"
+             xmlns:generatorViewModels="using:CqrsGenerator.Gui.ViewModels.Generators"
+             x:Class="CqrsGenerator.Gui.Views.AddQueryRootSessionView"
+             x:DataType="generatorViewModels:AddQueryRootSessionViewModel">
+  <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <Grid RowDefinitions="Auto,Auto,*"
+          RowSpacing="16">
+      <Border Padding="14"
+              Background="{DynamicResource PanelBackgroundBrush}"
+              BorderBrush="{DynamicResource BorderBrush}"
+              BorderThickness="1"
+              CornerRadius="6">
+        <Grid ColumnDefinitions="*,*,*"
+              ColumnSpacing="16">
+          <Grid RowDefinitions="Auto,Auto,Auto"
+                RowSpacing="8"
+                HorizontalAlignment="Stretch">
+            <TextBlock Text="Feature"
+                       FontWeight="SemiBold" />
+            <shared:WrappedListPicker Grid.Row="1"
+                                      DataContext="{Binding FeaturePicker}"
+                                      HorizontalAlignment="Stretch" />
+            <StackPanel Grid.Row="2"
+                        Orientation="Horizontal"
+                        Spacing="8">
+              <Button Content="Create Feature"
+                      Command="{Binding OpenCreateFeatureCommand}"
+                      HorizontalAlignment="Left"
+                      IsVisible="{Binding ShowCreateFeatureButton}" />
+              <Grid IsVisible="{Binding HasCustomFeature}">
+                <shared:ItemChip DataContext="{Binding CustomFeatureChip}" />
+              </Grid>
+            </StackPanel>
+          </Grid>
+
+          <Grid Grid.Column="1"
+                RowDefinitions="Auto,Auto,Auto"
+                RowSpacing="8"
+                HorizontalAlignment="Stretch">
+            <TextBlock Text="Query Name"
+                       FontWeight="SemiBold" />
+            <shared:CyclicInput Grid.Row="1"
+                                DataContext="{Binding QueryNameCyclic}"
+                                HorizontalAlignment="Stretch" />
+            <StackPanel Grid.Row="2"
+                        Orientation="Vertical"
+                        Spacing="8">
+              <CheckBox Content="Generate handler body"
+                        IsChecked="{Binding GenerateHandlerBody, Mode=TwoWay}" />
+              <CheckBox Content="Update web imports"
+                        IsChecked="{Binding UpdateWebImports, Mode=TwoWay}" />
+            </StackPanel>
+          </Grid>
+
+          <Grid Grid.Column="2"
+                RowDefinitions="Auto,Auto,Auto,Auto"
+                RowSpacing="8"
+                HorizontalAlignment="Stretch">
+            <TextBlock Text="Result"
+                       FontWeight="SemiBold" />
+            <Grid Grid.Row="1"
+                  HorizontalAlignment="Stretch">
+              <shared:WrappedListPicker DataContext="{Binding ResultTypePicker}"
+                                        HorizontalAlignment="Stretch" />
+            </Grid>
+            <TextBlock Grid.Row="2"
+                       Text="{Binding DtoPromotionHintText}"
+                       Foreground="{DynamicResource TextUpdateBrush}"
+                       TextWrapping="Wrap"
+                       IsVisible="{Binding ShowDtoPromotionHint}" />
+            <StackPanel Grid.Row="3"
+                        Orientation="Horizontal"
+                        Spacing="8">
+              <Button Content="Create DTO"
+                      Command="{Binding OpenCreateDtoCommand}"
+                      HorizontalAlignment="Left"
+                      IsVisible="{Binding ShowCreateDtoButton}" />
+              <Grid IsVisible="{Binding HasCustomDto}">
+                <shared:ItemChip DataContext="{Binding CustomChip}" />
+              </Grid>
+            </StackPanel>
+          </Grid>
+        </Grid>
+      </Border>
+
+      <Border Grid.Row="1"
+              Padding="14"
+              Background="{DynamicResource PanelBackgroundBrush}"
+              BorderBrush="{DynamicResource BorderBrush}"
+              BorderThickness="1"
+              CornerRadius="6">
+        <shared:PropertyEntryListEditor DataContext="{Binding ParameterEditor}" />
+      </Border>
+
+      <Border Grid.Row="2"
+              Padding="14"
+              Background="{DynamicResource PanelBackgroundBrush}"
+              BorderBrush="{DynamicResource BorderBrush}"
+              BorderThickness="1"
+              CornerRadius="6">
+        <Grid RowDefinitions="Auto,Auto,Auto"
+              RowSpacing="12">
+          <TextBlock Text="Query Service"
+                     FontWeight="SemiBold" />
+
+          <shared:AutoItemStatus Grid.Row="1"
+                                 DataContext="{Binding QueryServiceStatus}" />
+
+          <Grid Grid.Row="2"
+                ColumnDefinitions="Auto,Auto,Auto"
+                ColumnSpacing="12">
+            <CheckBox Content="Create method"
+                      VerticalAlignment="Center"
+                      IsChecked="{Binding CreateQueryServiceMethod, Mode=TwoWay}" />
+            <Grid Grid.Column="1"
+                  IsEnabled="{Binding CreateQueryServiceMethod}">
+              <shared:CyclicInput DataContext="{Binding MethodNameCyclic}"
+                                  HorizontalAlignment="Left" />
+            </Grid>
+            <CheckBox Grid.Column="2"
+                      Content="Generate query service body"
+                      IsChecked="{Binding GenerateQueryServiceBody, Mode=TwoWay}"
+                      IsEnabled="{Binding CreateQueryServiceMethod}"
+                      VerticalAlignment="Center" />
+          </Grid>
+        </Grid>
+      </Border>
+    </Grid>
+  </ScrollViewer>
+</UserControl>

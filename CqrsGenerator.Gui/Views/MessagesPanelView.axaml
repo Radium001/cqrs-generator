@@ -1,0 +1,95 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:viewModels="using:CqrsGenerator.Gui.ViewModels"
+             xmlns:generation="using:CqrsGenerator.Core.Generation"
+             xmlns:validation="using:CqrsGenerator.Core.Validation"
+             x:Class="CqrsGenerator.Gui.Views.MessagesPanelView"
+             x:DataType="viewModels:MessagesPanelViewModel">
+  <Border Padding="16"
+          Background="{DynamicResource PanelBackgroundBrush}"
+          BorderBrush="{DynamicResource BorderBrush}"
+          BorderThickness="1"
+          CornerRadius="8">
+    <Grid RowDefinitions="Auto,Auto"
+          RowSpacing="8">
+      <Grid ColumnDefinitions="*,Auto"
+            ColumnSpacing="16">
+        <StackPanel Spacing="4"
+                    VerticalAlignment="Center">
+          <TextBlock Text="{Binding StatusText}"
+                     TextWrapping="Wrap"
+                     Foreground="{DynamicResource TextSecondaryBrush}" />
+          <TextBlock Text="{Binding ErrorText}"
+                     TextWrapping="Wrap"
+                     Foreground="{DynamicResource TextConflictBrush}"
+                     IsVisible="{Binding HasErrorText}" />
+        </StackPanel>
+
+        <StackPanel Grid.Column="1"
+                    Orientation="Horizontal"
+                    Spacing="8"
+                    VerticalAlignment="Center">
+          <Button Content="Build Plan"
+                  MinWidth="108"
+                  Command="{Binding BuildPlanCommand}"
+                  IsEnabled="{Binding CanBuildPlan}" />
+          <Button Content="Apply"
+                  MinWidth="88"
+                  Command="{Binding ApplyCommand}"
+                  IsEnabled="{Binding CanApply}" />
+        </StackPanel>
+      </Grid>
+
+      <StackPanel Grid.Row="1"
+                  Spacing="8">
+        <ItemsControl ItemsSource="{Binding GenerationWarnings}"
+                      IsVisible="{Binding HasGenerationWarnings}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="generation:GenerationWarning">
+              <Border Background="{DynamicResource PanelWarningBackgroundBrush}"
+                      CornerRadius="4"
+                      Padding="8,4"
+                      Margin="0,2">
+                <StackPanel Orientation="Horizontal"
+                            Spacing="6">
+                  <TextBlock Text="⚠"
+                             Foreground="{DynamicResource TextWarningBrush}" />
+                  <TextBlock Text="Generation warning:"
+                             FontWeight="SemiBold"
+                             Foreground="{DynamicResource TextWarningBrush}" />
+                  <TextBlock Text="{Binding Message}"
+                             Foreground="{DynamicResource TextSecondaryBrush}"
+                             TextWrapping="Wrap" />
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <ItemsControl ItemsSource="{Binding ArchitectureWarnings}"
+                      IsVisible="{Binding HasArchitectureWarnings}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="validation:ArchitectureWarning">
+              <Border Background="{DynamicResource PanelWarningBackgroundBrush}"
+                      CornerRadius="4"
+                      Padding="8,4"
+                      Margin="0,2">
+                <StackPanel Orientation="Horizontal"
+                            Spacing="6">
+                  <TextBlock Text="⚠"
+                             Foreground="{DynamicResource TextWarningBrush}" />
+                  <TextBlock Text="{Binding Title}"
+                             FontWeight="SemiBold"
+                             Foreground="{DynamicResource TextWarningBrush}" />
+                  <TextBlock Text="{Binding Message}"
+                             Foreground="{DynamicResource TextSecondaryBrush}"
+                             TextWrapping="Wrap" />
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </Grid>
+  </Border>
+</UserControl>

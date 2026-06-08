@@ -1,0 +1,59 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:viewModels="using:CqrsGenerator.Gui.ViewModels"
+             x:Class="CqrsGenerator.Gui.Views.MainMenuView"
+             x:DataType="viewModels:MainMenuViewModel">
+  <Border Background="{DynamicResource PanelBackgroundBrush}"
+          BorderBrush="{DynamicResource BorderBrush}"
+          BorderThickness="1"
+          CornerRadius="8">
+    <Grid ColumnDefinitions="Auto,*"
+          ColumnSpacing="12">
+      <Menu>
+        <MenuItem Header="_Project">
+          <MenuItem Header="_Open Project"
+                    Command="{Binding OpenProjectCommand}" />
+          <MenuItem Header="_Rescan"
+                    Command="{Binding RescanProjectCommand}"
+                    IsEnabled="{Binding CanRescan}" />
+        </MenuItem>
+
+        <MenuItem Header="_Settings">
+          <MenuItem Header="_Theme">
+            <MenuItem Header="_System"
+                      Command="{Binding SetSystemThemeCommand}">
+              <MenuItem.Icon>
+                <TextBlock Text="✓"
+                           IsVisible="{Binding IsSystemThemeSelected}" />
+              </MenuItem.Icon>
+            </MenuItem>
+            <MenuItem Header="_Light"
+                      Command="{Binding SetLightThemeCommand}">
+              <MenuItem.Icon>
+                <TextBlock Text="✓"
+                           IsVisible="{Binding IsLightThemeSelected}" />
+              </MenuItem.Icon>
+            </MenuItem>
+            <MenuItem Header="_Dark"
+                      Command="{Binding SetDarkThemeCommand}">
+              <MenuItem.Icon>
+                <TextBlock Text="✓"
+                           IsVisible="{Binding IsDarkThemeSelected}" />
+              </MenuItem.Icon>
+            </MenuItem>
+          </MenuItem>
+        </MenuItem>
+      </Menu>
+
+      <StackPanel Grid.Column="1"
+                  Margin="0,6,12,6"
+                  HorizontalAlignment="Right"
+                  Spacing="2">
+        <TextBlock HorizontalAlignment="Right"
+                   Text="{Binding TargetRootPath}"
+                   TextTrimming="CharacterEllipsis"
+                   Foreground="{DynamicResource TextMutedBrush}" />
+      </StackPanel>
+    </Grid>
+  </Border>
+</UserControl>

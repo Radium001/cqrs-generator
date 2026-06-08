@@ -1,0 +1,21 @@
+using MediatR;
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+{{ usings_block }}
+namespace {{ namespace }}
+{
+    public class {{ handler_type }} : IRequestHandler<{{ command_type }}{{ if has_response }}, {{ response_type }}{{ end }}>
+    {
+{{ if has_dependencies }}{{ dependencies_fields }}
+
+        public {{ handler_type }}({{ dependencies_params }})
+        {
+{{ dependencies_assignments }}        }
+
+{{ end }}        public async {{ handler_return_type }} Handle({{ command_type }} request, CancellationToken cancellationToken)
+        {
+            throw new NotImplementedException();
+        }
+    }
+}

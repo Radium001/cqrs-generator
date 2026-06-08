@@ -1,0 +1,57 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:viewModels="using:CqrsGenerator.Gui.ViewModels"
+             x:Class="CqrsGenerator.Gui.Views.ActionLauncherView"
+             x:DataType="viewModels:ActionLauncherViewModel">
+  <Grid RowDefinitions="Auto,*"
+        RowSpacing="16">
+    <TextBlock Text="Action Launcher"
+               FontSize="18"
+               FontWeight="SemiBold" />
+
+    <ScrollViewer Grid.Row="1"
+                  VerticalScrollBarVisibility="Auto">
+      <ItemsControl ItemsSource="{Binding Groups}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="viewModels:ActionGroupViewModel">
+            <StackPanel Margin="0,0,0,18"
+                        Spacing="8">
+              <TextBlock Text="{Binding Title}"
+                         FontWeight="SemiBold"
+                         Foreground="{DynamicResource TextSecondaryBrush}" />
+
+              <ItemsControl ItemsSource="{Binding Actions}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                   <WrapPanel ItemWidth="200"
+                                ItemHeight="80"
+                                ItemSpacing="12"
+                                LineSpacing="12" />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                   <DataTemplate x:DataType="viewModels:ActionLauncherItemViewModel">
+                     <Button Command="{Binding OpenCommand}"
+                             Width="200"
+                             Height="80"
+                             CornerRadius="10"
+                             HorizontalContentAlignment="Stretch"
+                             VerticalContentAlignment="Stretch"
+                             IsEnabled="{Binding IsImplemented}">
+                       <TextBlock Text="{Binding DisplayName}"
+                                  FontSize="15"
+                                  FontWeight="SemiBold"
+                                  TextWrapping="Wrap"
+                                  HorizontalAlignment="Center"
+                                  VerticalAlignment="Center" />
+                     </Button>
+                   </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

@@ -1,0 +1,16 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CqrsGenerator.Gui.ViewModels"
+             xmlns:shared="using:CqrsGenerator.Gui.Views.Shared"
+             x:Class="CqrsGenerator.Gui.Views.Shared.SubfolderPickerField"
+             x:DataType="vm:WrappedListPickerViewModel">
+  <Grid RowDefinitions="Auto,*"
+        RowSpacing="8"
+        HorizontalAlignment="Stretch">
+    <TextBlock Text="Subfolder"
+               FontWeight="SemiBold" />
+    <shared:WrappedListPicker Grid.Row="1"
+                              DataContext="{Binding}"
+                              HorizontalAlignment="Stretch" />
+  </Grid>
+</UserControl>

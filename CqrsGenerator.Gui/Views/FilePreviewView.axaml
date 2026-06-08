@@ -1,0 +1,21 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:viewModels="using:CqrsGenerator.Gui.ViewModels"
+             xmlns:avaloniaEdit="clr-namespace:AvaloniaEdit;assembly=AvaloniaEdit"
+             xmlns:avaloniaEditEditing="clr-namespace:AvaloniaEdit.Editing;assembly=AvaloniaEdit"
+             x:Class="CqrsGenerator.Gui.Views.FilePreviewView"
+             x:DataType="viewModels:FilePreviewViewModel">
+  <UserControl.Styles>
+    <Style Selector="avaloniaEditEditing|TextArea">
+      <Setter Property="SelectionBrush" Value="{DynamicResource CodeSelectionBackgroundBrush}" />
+      <Setter Property="SelectionForeground" Value="{DynamicResource TextPrimaryBrush}" />
+    </Style>
+  </UserControl.Styles>
+  <avaloniaEdit:TextEditor x:Name="Editor"
+                           ShowLineNumbers="True"
+                           WordWrap="False"
+                           FontFamily="Cascadia Code, Consolas, Menlo, monospace"
+                           Background="{DynamicResource PanelBackgroundBrush}"
+                           Foreground="{DynamicResource TextPrimaryBrush}"
+                           IsReadOnly="True" />
+</UserControl>

@@ -1,0 +1,18 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:viewModels="using:CqrsGenerator.Gui.ViewModels"
+             xmlns:shared="using:CqrsGenerator.Gui.Views.Shared"
+             x:Class="CqrsGenerator.Gui.Views.Shared.QueryPicker"
+             x:DataType="viewModels:QueryPickerViewModel">
+  <StackPanel Spacing="8">
+    <TextBlock Text="Queries"
+               FontWeight="SemiBold" />
+
+    <shared:MultiSelectListPicker DataContext="{Binding Picker}" />
+
+    <Button Command="{Binding CreateQueryCommand}"
+            HorizontalAlignment="Left">
+      + Create Query
+    </Button>
+  </StackPanel>
+</UserControl>

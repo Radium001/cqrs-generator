@@ -1,0 +1,59 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CqrsGenerator.Gui.ViewModels.Generators"
+             xmlns:shared="using:CqrsGenerator.Gui.Views.Shared"
+             x:Class="CqrsGenerator.Gui.Views.DtoRootSessionView"
+             x:DataType="vm:DtoRootSessionViewModel">
+  <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <StackPanel Spacing="16">
+      <Border Padding="14"
+              Background="{DynamicResource PanelBackgroundBrush}"
+              BorderBrush="{DynamicResource BorderBrush}"
+              BorderThickness="1"
+              CornerRadius="6">
+        <Grid ColumnDefinitions="*,*,*"
+              ColumnSpacing="16">
+          <Grid RowDefinitions="Auto,*"
+                RowSpacing="8"
+                HorizontalAlignment="Stretch">
+            <TextBlock Text="Feature"
+                       FontWeight="SemiBold" />
+            <shared:WrappedListPicker Grid.Row="1"
+                                      DataContext="{Binding FeaturePicker}"
+                                      HorizontalAlignment="Stretch" />
+          </Grid>
+
+          <Grid Grid.Column="1"
+                RowDefinitions="Auto,Auto,Auto"
+                RowSpacing="8"
+                HorizontalAlignment="Stretch">
+            <TextBlock Text="DTO Name"
+                       FontWeight="SemiBold" />
+            <shared:CyclicInput Grid.Row="1"
+                                DataContext="{Binding DtoNameCyclic}"
+                                HorizontalAlignment="Stretch" />
+            <StackPanel Grid.Row="2"
+                        Orientation="Vertical"
+                        Spacing="8">
+              <CheckBox Content="Update web imports"
+                        IsChecked="{Binding UpdateWebImports, Mode=TwoWay}" />
+            </StackPanel>
+          </Grid>
+
+          <Panel Grid.Column="2"
+                 IsVisible="{Binding ShowSubfolderPicker}">
+            <shared:SubfolderPickerField DataContext="{Binding SubfolderPicker}" />
+          </Panel>
+        </Grid>
+      </Border>
+
+      <Border Padding="14"
+              Background="{DynamicResource PanelBackgroundBrush}"
+              BorderBrush="{DynamicResource BorderBrush}"
+              BorderThickness="1"
+              CornerRadius="6">
+        <shared:PropertyEntryListEditor DataContext="{Binding PropertyEditor}" />
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

@@ -1,0 +1,85 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CqrsGenerator.Gui.ViewModels"
+             x:Class="CqrsGenerator.Gui.Views.Shared.MultiSelectListPicker"
+             x:DataType="vm:MultiSelectListPickerViewModel">
+  <StackPanel Spacing="8">
+    <Grid ColumnDefinitions="*,Auto,Auto"
+          ColumnSpacing="8">
+      <TextBox Name="SearchTextBox"
+               Watermark="{Binding SearchWatermark}"
+               Text="{Binding SearchText, Mode=TwoWay}"
+               KeyDown="OnSearchTextBoxKeyDown" />
+      <Button Grid.Column="1"
+              Command="{Binding SelectAllCommand}">
+        Select all
+      </Button>
+      <Button Grid.Column="2"
+              Command="{Binding DeselectAllCommand}">
+        Clear selection
+      </Button>
+    </Grid>
+
+    <ListBox Name="ItemListBox"
+             ItemsSource="{Binding FilteredItems}"
+             MaxHeight="200"
+             BorderThickness="1"
+             BorderBrush="{DynamicResource BorderBrush}">
+      <ListBox.Styles>
+        <Style Selector="ListBoxItem">
+          <Setter Property="Padding" Value="4,2" />
+          <Setter Property="MinHeight" Value="20" />
+        </Style>
+      </ListBox.Styles>
+      <ListBox.ItemTemplate>
+        <DataTemplate x:DataType="vm:WrappedListItem">
+          <Grid ColumnDefinitions="Auto,*,Auto,Auto"
+                ColumnSpacing="6">
+            <CheckBox IsChecked="{Binding IsSelected}"
+                      Command="{Binding $parent[ListBox].((vm:MultiSelectListPickerViewModel)DataContext).ToggleItemCommand}"
+                      CommandParameter="{Binding OriginalItem}" />
+
+            <TextBlock Grid.Column="1"
+                       Text="{Binding DisplayText}"
+                       VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis" />
+
+            <Button Grid.Column="2"
+                    Command="{Binding $parent[ListBox].((vm:MultiSelectListPickerViewModel)DataContext).EditRuntimeItemCommand}"
+                    CommandParameter="{Binding OriginalItem}"
+                    IsVisible="{Binding CanEdit}"
+                    Width="28"
+                    Height="28"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    ToolTip.Tip="Edit">
+              <PathIcon Data="{StaticResource EditIcon}"
+                        Width="14"
+                        Height="14" />
+            </Button>
+
+            <Button Grid.Column="3"
+                    Command="{Binding $parent[ListBox].((vm:MultiSelectListPickerViewModel)DataContext).RemoveRuntimeItemCommand}"
+                    CommandParameter="{Binding OriginalItem}"
+                    IsVisible="{Binding CanRemove}"
+                    Width="28"
+                    Height="28"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    ToolTip.Tip="Remove">
+              <PathIcon Data="{StaticResource DeleteIcon}"
+                        Width="14"
+                        Height="14" />
+            </Button>
+          </Grid>
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+
+    <Button Command="{Binding AddRuntimeItemCommand}"
+            IsVisible="{Binding HasAddItem}"
+            HorizontalAlignment="Left">
+      + Add dependency
+    </Button>
+  </StackPanel>
+</UserControl>

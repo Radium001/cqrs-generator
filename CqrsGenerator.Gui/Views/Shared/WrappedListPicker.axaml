@@ -1,0 +1,76 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CqrsGenerator.Gui.ViewModels"
+             x:Class="CqrsGenerator.Gui.Views.Shared.WrappedListPicker"
+             x:DataType="vm:WrappedListPickerViewModel">
+  <Grid RowDefinitions="Auto,Auto"
+        MinWidth="120">
+    <TextBox Name="SearchTextBox"
+             Grid.Row="0"
+             Watermark="{Binding SearchWatermark}"
+             Text="{Binding SearchText, Mode=TwoWay}"
+             IsReadOnly="{Binding IsSearchReadOnly}"
+             KeyDown="OnPickerKeyDown" />
+
+    <ListBox Name="ItemListBox"
+             Grid.Row="1"
+             Margin="0,4,0,0"
+             ItemsSource="{Binding FilteredItems}"
+             SelectedItem="{Binding SelectedItem, Mode=TwoWay}"
+             KeyDown="OnPickerKeyDown"
+             MaxHeight="200"
+             BorderThickness="1"
+             BorderBrush="{DynamicResource BorderBrush}">
+      <ListBox.Styles>
+        <Style Selector="ListBoxItem">
+          <Setter Property="Padding" Value="4,2" />
+          <Setter Property="MinHeight" Value="20" />
+        </Style>
+        <Style Selector="TextBlock.WarningPrimary">
+          <Setter Property="Foreground" Value="{DynamicResource TextUpdateBrush}" />
+        </Style>
+        <Style Selector="TextBlock.WarningSecondary">
+          <Setter Property="Foreground" Value="{DynamicResource TextWarningSecondaryBrush}" />
+        </Style>
+      </ListBox.Styles>
+      <ListBox.ItemTemplate>
+        <DataTemplate x:DataType="vm:WrappedListItem">
+          <Border Padding="2"
+                  CornerRadius="4"
+                  IsEnabled="{Binding IsSelectable}">
+            <Grid ColumnDefinitions="Auto,*">
+              <Border Grid.Column="0"
+                      Width="3"
+                      Margin="0,1,8,1"
+                      CornerRadius="2"
+                      Background="{DynamicResource WarningBrush}"
+                      IsVisible="{Binding HasWarningAccent}" />
+              <StackPanel Grid.Column="1"
+                          Orientation="Horizontal"
+                          VerticalAlignment="Center"
+                          Spacing="6">
+                <PathIcon Data="{Binding IconGeometry, Converter={StaticResource StringToGeometryConverter}}"
+                          IsVisible="{Binding IconGeometry, Converter={StaticResource StringNotNullConverter}}"
+                          Width="16"
+                          Height="16"
+                          Margin="4,0,0,0" />
+                <StackPanel Orientation="Vertical"
+                            Margin="0,1,8,1">
+                  <TextBlock Text="{Binding PrimaryText}"
+                             Classes.WarningPrimary="{Binding HasWarningText}"
+                             TextTrimming="CharacterEllipsis" />
+                  <TextBlock Text="{Binding SecondaryText}"
+                             FontSize="11"
+                             Foreground="{DynamicResource TextSecondaryBrush}"
+                             Classes.WarningSecondary="{Binding HasWarningText}"
+                             TextTrimming="CharacterEllipsis"
+                             IsVisible="{Binding SecondaryText, Converter={StaticResource StringNotNullConverter}}" />
+                </StackPanel>
+              </StackPanel>
+            </Grid>
+          </Border>
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+  </Grid>
+</UserControl>

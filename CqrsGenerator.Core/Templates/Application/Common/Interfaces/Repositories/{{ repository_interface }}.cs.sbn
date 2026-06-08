@@ -1,0 +1,11 @@
+using {{ entity_namespace }};
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace {{ namespace }}
+{
+    public interface {{ repository_interface }}
+    {
+{{ interface_methods }}
+    }
+}

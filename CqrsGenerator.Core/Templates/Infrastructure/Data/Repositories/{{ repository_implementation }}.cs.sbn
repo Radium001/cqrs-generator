@@ -1,0 +1,30 @@
+using {{ interface_namespace }};
+using {{ entity_namespace }};
+using Infrastructure.Common.Abstractions;
+using Infrastructure.Data.IdTracking;
+using System.Threading;
+using System.Threading.Tasks;
+using EfEntity = Infrastructure.Data.Entities.{{ entity_name }};
+
+namespace {{ namespace }}
+{
+    public class {{ repository_implementation }} : BaseRepository<{{ entity_name }}, EfEntity>, {{ repository_interface }}
+    {
+        public {{ repository_implementation }}(upContext context, IEntityIdTracker idTracker)
+            : base(context, idTracker)
+        {
+        }
+
+        protected override {{ entity_name }} ToDomain(EfEntity entity)
+        {
+            return entity.ToEntity();
+        }
+
+        protected override EfEntity ToEntity({{ entity_name }} domain)
+        {
+            return new EfEntity(domain);
+        }
+
+{{ impl_methods }}
+    }
+}

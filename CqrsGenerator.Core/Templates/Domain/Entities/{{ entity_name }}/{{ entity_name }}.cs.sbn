@@ -1,0 +1,19 @@
+using Domain.Entities.Common;
+using System;
+
+namespace {{ namespace }}
+{
+    public class {{ entity_name }} : BaseEntity
+    {
+{{ if has_properties }}{{ properties_block }}
+
+{{ end }}{{ if has_factory }}        public static {{ entity_name }} Create({{ factory_params }})
+        {
+            return new {{ entity_name }}
+            {
+{{ factory_assignments }}            };
+        }
+
+{{ end }}{{ if has_domain_methods }}{{ domain_methods_block }}
+{{ end }}    }
+}

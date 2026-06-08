@@ -1,0 +1,32 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CqrsGenerator.Gui.ViewModels"
+             x:Class="CqrsGenerator.Gui.Views.Shared.CyclicInput"
+             x:DataType="vm:CyclicInputViewModel">
+  <TextBox Text="{Binding Text}"
+           MinWidth="200"
+           KeyDown="OnKeyDown">
+    <TextBox.InnerLeftContent>
+      <Button Content="{Binding CurrentPrefix}"
+              IsVisible="{Binding HasPrefix}"
+              Command="{Binding AdvanceCommand}"
+              Background="Transparent"
+              BorderThickness="0"
+              Focusable="False"
+              Cursor="Hand"
+              Padding="4,2"
+              Foreground="{DynamicResource TextMutedBrush}" />
+    </TextBox.InnerLeftContent>
+    <TextBox.InnerRightContent>
+      <Button Content="{Binding CurrentSuffix}"
+              IsVisible="{Binding HasSuffix}"
+              Command="{Binding AdvanceCommand}"
+              Background="Transparent"
+              BorderThickness="0"
+              Focusable="False"
+              Cursor="Hand"
+              Padding="4,2"
+              Foreground="{DynamicResource TextMutedBrush}" />
+    </TextBox.InnerRightContent>
+  </TextBox>
+</UserControl>

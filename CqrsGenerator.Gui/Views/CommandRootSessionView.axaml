@@ -1,0 +1,79 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:viewModels="using:CqrsGenerator.Gui.ViewModels"
+             xmlns:shared="using:CqrsGenerator.Gui.Views.Shared"
+             xmlns:generatorViewModels="using:CqrsGenerator.Gui.ViewModels.Generators"
+             x:Class="CqrsGenerator.Gui.Views.CommandRootSessionView"
+             x:DataType="generatorViewModels:CommandRootSessionViewModel">
+  <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <StackPanel Spacing="16">
+      <Border Padding="14"
+              Background="{DynamicResource PanelBackgroundBrush}"
+              BorderBrush="{DynamicResource BorderBrush}"
+              BorderThickness="1"
+              CornerRadius="6">
+        <Grid ColumnDefinitions="*,*,*"
+              ColumnSpacing="16">
+          <Grid RowDefinitions="Auto,*"
+                RowSpacing="8"
+                HorizontalAlignment="Stretch">
+            <TextBlock Text="Feature"
+                       FontWeight="SemiBold" />
+            <shared:WrappedListPicker Grid.Row="1"
+                                      DataContext="{Binding FeaturePicker}"
+                                      HorizontalAlignment="Stretch" />
+          </Grid>
+
+          <Grid Grid.Column="1"
+                RowDefinitions="Auto,Auto,Auto"
+                RowSpacing="8"
+                HorizontalAlignment="Stretch">
+            <TextBlock Text="Command Name"
+                       FontWeight="SemiBold" />
+            <shared:CyclicInput Grid.Row="1"
+                                DataContext="{Binding CommandNameCyclic}"
+                                HorizontalAlignment="Stretch" />
+            <CheckBox Grid.Row="2"
+                      Content="Update web imports"
+                      IsChecked="{Binding UpdateWebImports, Mode=TwoWay}" />
+          </Grid>
+
+          <Grid Grid.Column="2"
+                RowDefinitions="Auto,Auto,Auto"
+                RowSpacing="8"
+                HorizontalAlignment="Stretch">
+            <TextBlock Text="Response (optional)"
+                       FontWeight="SemiBold" />
+            <CheckBox Grid.Row="1"
+                      Content="Command returns a value"
+                      IsChecked="{Binding HasResponseType, Mode=TwoWay}" />
+            <Grid Grid.Row="2"
+                  IsVisible="{Binding HasResponseType}">
+              <Grid RowDefinitions="Auto"
+                    RowSpacing="8">
+                <shared:WrappedListPicker DataContext="{Binding ResultTypePicker}"
+                                          HorizontalAlignment="Stretch" />
+              </Grid>
+            </Grid>
+          </Grid>
+        </Grid>
+      </Border>
+
+      <Border Padding="14"
+              Background="{DynamicResource PanelBackgroundBrush}"
+              BorderBrush="{DynamicResource BorderBrush}"
+              BorderThickness="1"
+              CornerRadius="6">
+        <shared:PropertyEntryListEditor DataContext="{Binding ParameterEditor}" />
+      </Border>
+
+      <Border Padding="14"
+              Background="{DynamicResource PanelBackgroundBrush}"
+              BorderBrush="{DynamicResource BorderBrush}"
+              BorderThickness="1"
+              CornerRadius="6">
+        <shared:DependencyPicker DataContext="{Binding DependencyPicker}" />
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

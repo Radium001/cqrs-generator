@@ -1,0 +1,63 @@
+@page "{{ route }}"
+@inherits StateComponentBase
+
+@inject AppMediator Mediator
+
+<LoadingWrapper IsLoading="@State.IsBusy("loading-{{ busy_key }}")">
+    <RadzenStack Gap="1rem">
+{{ if has_queries }}
+        <RadzenCard>
+            <DataGrid Data="@{{ queries[0].variable_name }}"
+                      TItem="{{ queries[0].result_type }}"
+                      AllowPaging="true"
+                      AllowColumnResize="true">
+                <Columns>
+                    <RadzenDataGridColumn TItem="{{ queries[0].result_type }}"
+                                          Property="Id"
+                                          Title="ID" />
+                </Columns>
+            </DataGrid>
+        </RadzenCard>
+{{ end }}
+    </RadzenStack>
+</LoadingWrapper>
+
+@code {
+{{ for param in route_parameters }}
+    [Parameter]
+    public {{ param.param_type }} {{ param.name }} { get; set; }
+{{ end }}
+
+{{ if has_queries }}
+    private bool _isFirstLoad = true;
+{{ for q in queries }}
+    private {{ if q.is_list }}IEnumerable<{{ q.result_type }}>{{ else }}{{ q.result_type }}{{ end }} {{ q.variable_name }}{{ if q.is_list }} = []{{ else }} = default!{{ end }};
+{{ end }}
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (_isFirstLoad)
+        {
+            _isFirstLoad = false;
+            await State.RunAsync("loading-{{ busy_key }}", async () =>
+            {
+{{ for q in queries }}{{ if q.has_refresh }}
+                await {{ q.refresh_method }}();
+{{ else }}
+                {{ q.variable_name }} = await Mediator.SendAsync(new {{ q.query_name }}({{ q.args }}));
+{{ end }}{{ end }}
+            });
+        }
+    }
+
+{{ for q in queries }}{{ if q.has_refresh }}
+    private async Task {{ q.refresh_method }}() =>
+        {{ q.variable_name }} = await Mediator.SendAsync(new {{ q.query_name }}({{ q.args }}));
+{{ end }}{{ end }}
+{{ else }}
+    protected override async Task OnInitializedAsync()
+    {
+        // await Mediator.SendAsync(new YourQuery());
+    }
+{{ end }}
+}

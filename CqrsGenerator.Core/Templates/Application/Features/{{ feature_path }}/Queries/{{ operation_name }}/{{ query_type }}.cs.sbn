@@ -1,0 +1,14 @@
+using Application.Common.Interfaces;
+{{ usings_block }}
+
+namespace {{ namespace }}
+{
+    public class {{ query_type }} : IQuery<{{ response_type }}>
+    {
+{{ if has_properties }}        public {{ query_type }}({{ constructor_parameters }})
+        {
+{{ constructor_assignments }}        }
+
+{{ properties_block }}
+{{ end }}    }
+}

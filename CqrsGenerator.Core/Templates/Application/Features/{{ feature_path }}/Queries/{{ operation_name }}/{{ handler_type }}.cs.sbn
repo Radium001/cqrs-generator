@@ -1,0 +1,25 @@
+using MediatR;
+using System;
+{{ if needs_collections }}using System.Collections.Generic;
+{{ end }}using System.Threading;
+using System.Threading.Tasks;
+{{ if dto_namespace != "" }}using {{ dto_namespace }};
+{{ end }}{{ if service_namespace != "" }}using {{ service_namespace }};
+{{ end }}
+namespace {{ namespace }}
+{
+    public class {{ handler_type }} : IRequestHandler<{{ query_type }}, {{ response_type }}>
+    {
+{{ if has_service }}        private readonly {{ service_type }} {{ service_field }};
+
+        public {{ handler_type }}({{ service_type }} {{ service_parameter }})
+        {
+            {{ service_field }} = {{ service_parameter }};
+        }
+
+{{ end }}        public async Task<{{ response_type }}> Handle({{ query_type }} request, CancellationToken cancellationToken)
+        {
+            {{ handler_body }}
+        }
+    }
+}

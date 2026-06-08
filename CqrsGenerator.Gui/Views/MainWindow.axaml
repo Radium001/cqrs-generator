@@ -1,0 +1,40 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:viewModels="using:CqrsGenerator.Gui.ViewModels"
+        xmlns:views="using:CqrsGenerator.Gui.Views"
+        x:Class="CqrsGenerator.Gui.Views.MainWindow"
+        x:DataType="viewModels:MainWindowViewModel"
+        WindowStartupLocation="CenterScreen"
+        MinWidth="1024"
+        MinHeight="640"
+        Background="{DynamicResource WindowBackgroundBrush}"
+        Title="{Binding Title}">
+  <Grid RowDefinitions="Auto,*,Auto"
+        ColumnDefinitions="*,4,*"
+        Margin="16">
+    <views:MainMenuView Grid.Row="0"
+                        Grid.ColumnSpan="3"
+                        DataContext="{Binding MainMenu}" />
+
+    <views:GeneratorHostView Grid.Row="1"
+                             Grid.Column="0"
+                             Margin="8,12,4,0"
+                             DataContext="{Binding GeneratorHost}" />
+
+    <GridSplitter Grid.Row="1"
+                  Grid.Column="1"
+                  Margin="0,12,0,0"
+                  Background="Transparent"
+                  ResizeDirection="Columns" />
+
+    <views:GenerationPlanPreviewView Grid.Row="1"
+                                     Grid.Column="2"
+                                     Margin="4,12,8,0"
+                                     DataContext="{Binding GenerationPlanPreview}" />
+
+    <views:MessagesPanelView Grid.Row="2"
+                             Grid.ColumnSpan="3"
+                             Margin="0,16,0,0"
+                             DataContext="{Binding MessagesPanel}" />
+  </Grid>
+</Window>

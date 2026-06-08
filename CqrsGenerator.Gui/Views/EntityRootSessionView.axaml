@@ -1,0 +1,93 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CqrsGenerator.Gui.ViewModels.Generators"
+             xmlns:shared="using:CqrsGenerator.Gui.Views.Shared"
+             x:Class="CqrsGenerator.Gui.Views.EntityRootSessionView"
+             x:DataType="vm:EntityRootSessionViewModel">
+  <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <StackPanel Spacing="16">
+      <Border Padding="14"
+              Background="{DynamicResource PanelBackgroundBrush}"
+              BorderBrush="{DynamicResource BorderBrush}"
+              BorderThickness="1"
+              CornerRadius="6">
+        <Grid ColumnDefinitions="*,*,*"
+              ColumnSpacing="16">
+          <Grid RowDefinitions="Auto,Auto"
+                RowSpacing="8">
+            <TextBlock Text="Entity"
+                       FontWeight="SemiBold" />
+            <StackPanel Grid.Row="1"
+                        Spacing="8">
+              <shared:CyclicInput DataContext="{Binding EntityNameCyclic}" />
+              <Grid ColumnDefinitions="*,Auto"
+                    ColumnSpacing="12">
+                <TextBlock Text="Use EF entity"
+                           VerticalAlignment="Center" />
+                <ToggleSwitch Grid.Column="1"
+                              IsChecked="{Binding UseEfEntity, Mode=TwoWay}"
+                              OnContent=""
+                              OffContent="" />
+              </Grid>
+            </StackPanel>
+          </Grid>
+
+          <shared:SubfolderPickerField Grid.Column="1"
+                                       DataContext="{Binding SubfolderPicker}" />
+
+          <Grid Grid.Column="2"
+                RowDefinitions="Auto,*"
+                RowSpacing="8">
+            <TextBlock Text="Options"
+                       FontWeight="SemiBold" />
+            <StackPanel Grid.Row="1"
+                        Spacing="8">
+              <CheckBox Content="Generate factory method"
+                        IsChecked="{Binding GenerateFactoryMethod, Mode=TwoWay}" />
+              <CheckBox Content="Generate EF mapping"
+                        IsChecked="{Binding GenerateEfMapping, Mode=TwoWay}" />
+              <CheckBox Content="Rename IdXxx to XxxId"
+                        IsChecked="{Binding RenameEfIdentifierProperties, Mode=TwoWay}"
+                        IsVisible="{Binding IsEfEntityMode}" />
+            </StackPanel>
+          </Grid>
+        </Grid>
+      </Border>
+
+      <Border Padding="14"
+              Background="{DynamicResource PanelBackgroundBrush}"
+              BorderBrush="{DynamicResource BorderBrush}"
+              BorderThickness="1"
+              CornerRadius="6"
+              IsVisible="{Binding IsEfEntityMode}">
+        <Grid ColumnDefinitions="*,*"
+              ColumnSpacing="16">
+          <Grid RowDefinitions="Auto,*"
+              RowSpacing="12">
+            <TextBlock Text="EF Entity"
+                       FontWeight="SemiBold" />
+            <shared:WrappedListPicker Grid.Row="1"
+                                      DataContext="{Binding EfEntityPicker}" />
+          </Grid>
+
+          <Grid Grid.Column="1"
+                RowDefinitions="Auto,*"
+                RowSpacing="12">
+            <TextBlock Text="EF Fields"
+                       FontWeight="SemiBold" />
+            <shared:MultiSelectListPicker Grid.Row="1"
+                                          DataContext="{Binding EfPropertyPicker}" />
+          </Grid>
+        </Grid>
+      </Border>
+
+      <Border Padding="14"
+              Background="{DynamicResource PanelBackgroundBrush}"
+              BorderBrush="{DynamicResource BorderBrush}"
+              BorderThickness="1"
+              CornerRadius="6">
+        <shared:PropertyEntryListEditor DataContext="{Binding PropertyEditor}" />
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

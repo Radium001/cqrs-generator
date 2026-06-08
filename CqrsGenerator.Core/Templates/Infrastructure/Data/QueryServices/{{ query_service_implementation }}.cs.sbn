@@ -1,0 +1,22 @@
+using Application.Common.Interfaces;
+using {{ interface_namespace }};
+using Infrastructure.Common.Abstractions;
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace {{ namespace }}
+{
+    public class {{ query_service_implementation }} : BaseQueryService, {{ query_service_interface }}
+    {
+        public {{ query_service_implementation }}(IDbConnectionFactory dbConnectionFactory)
+            : base(dbConnectionFactory)
+        {
+        }
+{{ if has_method }}
+        public async {{ method_return_type }} {{ method_name }}({{ method_parameters }})
+        {
+            {{ implementation_body }}
+        }
+{{ end }}    }
+}

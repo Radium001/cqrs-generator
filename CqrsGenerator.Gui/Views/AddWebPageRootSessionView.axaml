@@ -1,0 +1,69 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:viewModels="using:CqrsGenerator.Gui.ViewModels"
+             xmlns:shared="using:CqrsGenerator.Gui.Views.Shared"
+             xmlns:generatorViewModels="using:CqrsGenerator.Gui.ViewModels.Generators"
+             x:Class="CqrsGenerator.Gui.Views.AddWebPageRootSessionView"
+             x:DataType="generatorViewModels:AddWebPageRootSessionViewModel">
+  <ScrollViewer VerticalScrollBarVisibility="Auto">
+    <StackPanel Spacing="16">
+      <Border Padding="14"
+              Background="{DynamicResource PanelBackgroundBrush}"
+              BorderBrush="{DynamicResource BorderBrush}"
+              BorderThickness="1"
+              CornerRadius="6">
+        <Grid ColumnDefinitions="*,*,*"
+              ColumnSpacing="16">
+          <Grid RowDefinitions="Auto,*"
+                RowSpacing="8"
+                HorizontalAlignment="Stretch">
+            <TextBlock Text="Web Feature"
+                       FontWeight="SemiBold" />
+            <shared:WrappedListPicker Grid.Row="1"
+                                      DataContext="{Binding FeaturePicker}"
+                                      HorizontalAlignment="Stretch" />
+          </Grid>
+
+          <Grid Grid.Column="1"
+                RowDefinitions="Auto,Auto,Auto,Auto"
+                RowSpacing="8"
+                HorizontalAlignment="Stretch">
+            <TextBlock Text="Page Name"
+                       FontWeight="SemiBold" />
+            <shared:CyclicInput Grid.Row="1"
+                                DataContext="{Binding PageNameCyclic}"
+                                HorizontalAlignment="Stretch" />
+
+            <TextBlock Grid.Row="2"
+                       Text="Route"
+                       FontWeight="SemiBold" />
+            <TextBox Grid.Row="3"
+                     Watermark="Route (e.g. /products)"
+                     Text="{Binding Route, Mode=TwoWay}"
+                     HorizontalAlignment="Stretch" />
+
+          </Grid>
+
+          <Grid Grid.Column="2"
+                RowDefinitions="Auto,Auto"
+                RowSpacing="8"
+                HorizontalAlignment="Stretch">
+            <TextBlock Text="Options"
+                       FontWeight="SemiBold" />
+            <CheckBox Grid.Row="1"
+                      Content="Create _Imports.razor"
+                      IsChecked="{Binding CreateImports, Mode=TwoWay}" />
+          </Grid>
+        </Grid>
+      </Border>
+
+      <Border Padding="14"
+              Background="{DynamicResource PanelBackgroundBrush}"
+              BorderBrush="{DynamicResource BorderBrush}"
+              BorderThickness="1"
+              CornerRadius="6">
+        <shared:QueryPicker DataContext="{Binding QueryPicker}" />
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

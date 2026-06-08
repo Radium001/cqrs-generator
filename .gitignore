@@ -1,0 +1,39 @@
+# Build
+**/bin/
+**/obj/
+
+# Test results
+**/TestResults/
+**/coveragereport/
+
+# NuGet
+packages/
+*.nupkg
+
+# IDE
+.vs/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Target project (reference only)
+real_project/
+
+# AI agent artifacts
+.agents/
+.codex/
+.opencode/
+opencode.json
+AGENTS.md
+
+# Documentation
+docs/
+
+# Design documents
+PLAN_*.md
