@@ -17,6 +17,5 @@ public sealed class CreateFeatureScenarioDefinition : IGeneratorScenarioDefiniti
 
     public bool IsAvailable(WorkspaceState state) => true;
 
-    public IRootGeneratorSessionViewModel CreateRootSession(IEmbeddedSessionHost embeddedSessionHost) =>
-        _factory();
+    public IRootGeneratorSessionViewModel CreateRootSession() => _factory();
 }

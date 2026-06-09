@@ -4,7 +4,6 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using CqrsGenerator.Core.Discovery;
 using CqrsGenerator.Core.Generation;
-using CqrsGenerator.Gui.Collections;
 using CqrsGenerator.Gui.Models;
 using CqrsGenerator.Gui.Services;
 using CqrsGenerator.Gui.Session;
@@ -13,16 +12,15 @@ using CqrsGenerator.Gui.Session.States;
 namespace CqrsGenerator.Gui.ViewModels.Generators;
 
 public sealed partial class RepositoryRootSessionViewModel : ObservableObject,
-    IPlanBuildingRootSessionViewModel,
+    IRootGeneratorSessionViewModel,
     IWorkspaceAwareGeneratorSessionViewModel,
     IGeneratorNodeEditorViewModel
 {
     private readonly GenerationActionDescriptor? _actionDescriptor;
     private readonly IAddRepositoryPlanService _planService;
     private readonly IAddRepositoryScenarioOutlineBuilder _scenarioOutlineBuilder;
-    private readonly RuntimeItemCollection<EntityItemViewModel> _entities;
     private readonly bool _isStandalone;
-    private readonly RepositoryGeneratorState? _sessionState;
+    private RepositoryGeneratorState? _sessionState;
     private ProjectModel? _projectModel;
     private bool _isSyncingEntity;
     private GenerationSession? _generationSession;
@@ -34,7 +32,6 @@ public sealed partial class RepositoryRootSessionViewModel : ObservableObject,
     public RepositoryRootSessionViewModel(
         GenerationActionDescriptor? actionDescriptor,
         IAddRepositoryPlanService planService,
-        IEmbeddedSessionHost embeddedSessionHost,
         IAddRepositoryScenarioOutlineBuilder scenarioOutlineBuilder,
         IAddEntityPlanService entityPlanService,
         IAddEntityScenarioOutlineBuilder entityScenarioOutlineBuilder,
@@ -53,7 +50,7 @@ public sealed partial class RepositoryRootSessionViewModel : ObservableObject,
             ? $"root:add-repository:{Guid.NewGuid():N}"
             : $"child:create-repository:{Guid.NewGuid():N}";
 
-        _entities = new RuntimeItemCollection<EntityItemViewModel>(e => e.DisplayName);
+        AvailableEntities = [];
         EntityPicker = new WrappedListPickerViewModel
         {
             AllowCustom = false,
@@ -64,6 +61,8 @@ public sealed partial class RepositoryRootSessionViewModel : ObservableObject,
         AddCustomMethodCommand = new RelayCommand(AddCustomMethod);
         RemoveCustomMethodCommand = new RelayCommand<RepositoryMethodEditorViewModel>(RemoveCustomMethod);
         OpenCreateEntityCommand = new RelayCommand(OpenCreateEntity, () => Node is not null);
+        EditSelectedEntityCommand = new RelayCommand(EditSelectedEntity, () => SelectedEntity?.NodeId is not null);
+        RemoveSelectedEntityCommand = new RelayCommand(RemoveSelectedEntity, () => SelectedEntity?.NodeId is not null);
 
         MethodPresets =
         [
@@ -92,6 +91,11 @@ public sealed partial class RepositoryRootSessionViewModel : ObservableObject,
         {
             var state = new RepositoryGeneratorState { InterfaceName = "IRepository" };
             _node = navigator.CreateRoot(GeneratorNodeKind.Repository, state);
+            _sessionState = state;
+        }
+        else if (_node.State is RepositoryGeneratorState existingState)
+        {
+            _sessionState = existingState;
         }
     }
 
@@ -123,7 +127,7 @@ public sealed partial class RepositoryRootSessionViewModel : ObservableObject,
 
     public WrappedListPickerViewModel EntityPicker { get; }
 
-    public RuntimeItemCollection<EntityItemViewModel> AvailableEntities => _entities;
+    public ObservableCollection<EntityItemViewModel> AvailableEntities { get; }
 
     public ObservableCollection<RepositoryMethodPresetItemViewModel> MethodPresets { get; }
 
@@ -135,7 +139,15 @@ public sealed partial class RepositoryRootSessionViewModel : ObservableObject,
 
     public IRelayCommand OpenCreateEntityCommand { get; }
 
+    public IRelayCommand EditSelectedEntityCommand { get; }
+
+    public IRelayCommand RemoveSelectedEntityCommand { get; }
+
     public bool ShowCreateEntityButton => Node is not null && _navigator is not null;
+
+    public bool CanEditSelectedEntity => SelectedEntity?.NodeId is not null;
+
+    public bool CanRemoveSelectedEntity => SelectedEntity?.NodeId is not null;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanBuildPlan))]
@@ -170,40 +182,31 @@ public sealed partial class RepositoryRootSessionViewModel : ObservableObject,
     private void ReloadProject(ProjectModel? project)
     {
         _projectModel = project;
-        var previousDisplayName = SelectedEntity?.DisplayName;
+        var previousEntityRef = _sessionState?.EntityRef;
 
-        _entities.ClearRuntime();
+        AvailableEntities.Clear();
         OnPropertyChanged(nameof(HasUnsavedChanges));
 
         if (project is null)
         {
-            EntityPicker.RawItems = _entities;
+            EntityPicker.RawItems = AvailableEntities;
             return;
         }
 
-        var allEntities = project.Entities
-            .OrderBy(entity => entity.DisplayName, StringComparer.OrdinalIgnoreCase)
-            .Select(entity => new EntityItemViewModel(entity.Name, entity.DisplayName, entity.Namespace, entity.RelativePath))
-            .ToList();
-
-        if (_generationSession is not null)
+        var allEntities = BuildEntityItems(project);
+        foreach (var entity in allEntities)
         {
-            var sessionEntities = _generationSession.Artifacts.GetEntities();
-            foreach (var sessionEntity in sessionEntities)
-            {
-                if (!allEntities.Any(e => e.Name == sessionEntity.Name))
-                {
-                    allEntities.Add(new EntityItemViewModel(sessionEntity.Name, sessionEntity.Name, "Domain.Entities", string.Empty));
-                }
-            }
+            AvailableEntities.Add(entity);
         }
 
-        _entities.SetDiscovered(allEntities);
+        EntityPicker.RawItems = AvailableEntities;
 
-        EntityPicker.RawItems = _entities;
-
-        var match = _entities.FirstOrDefault(entity => entity.DisplayName == previousDisplayName)
-                    ?? _entities.FirstOrDefault();
+        var match = AvailableEntities.FirstOrDefault(entity =>
+                        previousEntityRef is not null &&
+                        entity.Ref is not null &&
+                        ArtifactRefEquals(entity.Ref, previousEntityRef))
+                    ?? AvailableEntities.FirstOrDefault(entity => entity.DisplayName == SelectedEntity?.DisplayName)
+                    ?? AvailableEntities.FirstOrDefault();
         _isSyncingEntity = true;
         SelectedEntity = match;
         EntityPicker.SelectRawItem(match);
@@ -298,6 +301,7 @@ public sealed partial class RepositoryRootSessionViewModel : ObservableObject,
     {
         if (_sessionState is null) return;
         _sessionState.AddDependencyInjectionRegistration = AddDependencyInjectionRegistration;
+        _sessionState.EntityRef = SelectedEntity?.Ref;
     }
 
     private void OnMethodPresetChanged(object? sender, PropertyChangedEventArgs e)
@@ -319,9 +323,116 @@ public sealed partial class RepositoryRootSessionViewModel : ObservableObject,
 
     private void OpenCreateEntity()
     {
-        if (Node is null || _navigator is null) return;
+        if (Node is null || _navigator is null || _generationSession is null) return;
         var state = new EntityGeneratorState { EntityName = "NewEntity" };
-        var child = _navigator.CreateChild(Node, GeneratorNodeKind.Entity, state);
+        var child = _navigator.CreateChild(Node, GeneratorNodeKind.Entity, state, "Entity");
         _navigator.OpenNode(child.Id);
+    }
+
+    partial void OnSelectedEntityChanged(EntityItemViewModel? value)
+    {
+        SyncToSessionState();
+        OnPropertyChanged(nameof(CanEditSelectedEntity));
+        OnPropertyChanged(nameof(CanRemoveSelectedEntity));
+        EditSelectedEntityCommand.NotifyCanExecuteChanged();
+        RemoveSelectedEntityCommand.NotifyCanExecuteChanged();
+    }
+
+    private void EditSelectedEntity()
+    {
+        if (SelectedEntity?.NodeId is Guid nodeId)
+        {
+            _navigator?.OpenNode(nodeId);
+        }
+    }
+
+    private void RemoveSelectedEntity()
+    {
+        if (SelectedEntity?.NodeId is not Guid nodeId || _navigator is null)
+        {
+            return;
+        }
+
+        if (_navigator.RemoveNode(nodeId))
+        {
+            if (_sessionState is not null)
+            {
+                _sessionState.EntityRef = null;
+            }
+            ReloadProject(_projectModel);
+            SyncToSessionState();
+        }
+    }
+
+    private List<EntityItemViewModel> BuildEntityItems(ProjectModel project)
+    {
+        var items = new List<EntityItemViewModel>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var entity in project.Entities.OrderBy(entity => entity.DisplayName, StringComparer.OrdinalIgnoreCase))
+        {
+            var reference = new ArtifactRef(
+                GeneratorNodeKind.Entity,
+                ArtifactOrigin.Project,
+                entity.Name,
+                FeaturePath: entity.RelativePath,
+                ProjectPath: entity.Path,
+                Namespace: entity.Namespace,
+                DisplayName: entity.DisplayName);
+            if (seen.Add(GetEntityKey(reference)))
+            {
+                items.Add(new EntityItemViewModel(reference));
+            }
+        }
+
+        if (_generationSession is not null)
+        {
+            foreach (var entity in _generationSession.Artifacts.GetEntities().OrderBy(entity => entity.DisplayName, StringComparer.OrdinalIgnoreCase))
+            {
+                if (seen.Add(GetEntityKey(entity.Ref)))
+                {
+                    items.Add(new EntityItemViewModel(entity.Ref));
+                }
+            }
+        }
+
+        return items;
+    }
+
+    private void SelectEntity(ArtifactRef? reference)
+    {
+        if (reference is null)
+        {
+            return;
+        }
+
+        var match = AvailableEntities.FirstOrDefault(entity => entity.Ref is not null && ArtifactRefEquals(entity.Ref, reference));
+        if (match is not null)
+        {
+            _isSyncingEntity = true;
+            SelectedEntity = match;
+            EntityPicker.SelectRawItem(match);
+            _isSyncingEntity = false;
+        }
+    }
+
+    private static bool ArtifactRefEquals(ArtifactRef left, ArtifactRef right)
+    {
+        if (left.NodeId.HasValue && right.NodeId.HasValue)
+        {
+            return left.NodeId == right.NodeId;
+        }
+
+        return left.Kind == right.Kind &&
+               left.Origin == right.Origin &&
+               string.Equals(left.Name, right.Name, StringComparison.OrdinalIgnoreCase) &&
+               string.Equals(left.Namespace, right.Namespace, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string GetEntityKey(ArtifactRef reference)
+    {
+        return reference.NodeId.HasValue
+            ? $"session:{reference.NodeId.Value:D}"
+            : $"project:{reference.Name}:{reference.Namespace}";
     }
 }

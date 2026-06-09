@@ -9,6 +9,10 @@ namespace CqrsGenerator.Gui.Session.Definitions;
 
 public sealed class QueryGeneratorDefinition : GeneratorDefinition<QueryGeneratorState>
 {
+    private const string QueryServiceUnavailableMessage = "Query service is not available.";
+    private const string QueryServiceBlockedMessage = "Query service implementation could not be resolved automatically. Normalize the existing implementation placement before adding methods through this flow.";
+    private static readonly IQueryServiceSuggestionService FallbackQueryServiceSuggestionService = new QueryServiceSuggestionService();
+
     public override GeneratorNodeKind Kind => GeneratorNodeKind.Query;
 
     public override string DisplayName => "Query";
@@ -33,7 +37,6 @@ public sealed class QueryGeneratorDefinition : GeneratorDefinition<QueryGenerato
         var createFeatureScenarioOutlineBuilder = services.ServiceProvider.GetRequiredService<ICreateFeatureScenarioOutlineBuilder>();
         var vm = new AddQueryRootSessionViewModel(
             actionDescriptor: null,
-            null!,
             planService,
             addDtoPlanService,
             addDtoScenarioOutlineBuilder,
@@ -54,8 +57,24 @@ public sealed class QueryGeneratorDefinition : GeneratorDefinition<QueryGenerato
         if (string.IsNullOrWhiteSpace(state.QueryName))
             return GeneratorValidationResult.Error("Query name is required.");
 
-        if (state.ResultDtoNodeId.HasValue && session.FindNode(state.ResultDtoNodeId.Value) is null)
+        if (state.ResultDtoRef?.IsFromSession == true &&
+            state.ResultDtoRef.NodeId.HasValue &&
+            session.FindNode(state.ResultDtoRef.NodeId.Value) is null)
             return GeneratorValidationResult.Error("Referenced DTO node no longer exists.");
+
+        if (state.CreateQueryServiceMethod)
+        {
+            var queryServiceSuggestion = ResolveQueryServiceSuggestion(state, session, session.Artifacts.ProjectModel, FallbackQueryServiceSuggestionService);
+            if (queryServiceSuggestion is null)
+            {
+                return GeneratorValidationResult.Error(QueryServiceUnavailableMessage);
+            }
+
+            if (queryServiceSuggestion.Mode == QueryServiceSuggestionMode.Blocked)
+            {
+                return GeneratorValidationResult.Error(QueryServiceBlockedMessage);
+            }
+        }
 
         return GeneratorValidationResult.Valid;
     }
@@ -75,33 +94,75 @@ public sealed class QueryGeneratorDefinition : GeneratorDefinition<QueryGenerato
         CoreWorkflowContext core)
     {
         var planService = core.ServiceProvider.GetRequiredService<IAddQueryPlanService>();
+        var queryServiceSuggestionService = core.ServiceProvider.GetRequiredService<IQueryServiceSuggestionService>();
 
         var dtoName = GetDtoName(state, session);
+        var queryServiceSuggestion = ResolveQueryServiceSuggestion(
+            state,
+            session,
+            core.WorkspaceContext.ProjectModel,
+            queryServiceSuggestionService);
         var formState = new AddQueryFormState(
-            featureName: null,
-            state.FeaturePath,
+            featureName: GetFeatureMetadata(state, session).FeatureName,
+            state.FeatureRef?.FeaturePath,
             state.QueryName,
             dtoName,
-            state.ResultDtoNodeId.HasValue,
+            state.ResultDtoRef?.IsFromSession == true,
             null,
-            ResponseShape.Single,
+            state.ResponseShape,
             state.Parameters.ToArray(),
-            null,
-            false,
-            string.Empty,
-            true,
-            false,
-            false);
+            queryServiceSuggestion,
+            state.CreateQueryServiceMethod,
+            state.MethodName,
+            state.GenerateHandlerBody,
+            state.GenerateQueryServiceBody,
+            state.UpdateWebImports);
 
         return planService.BuildPlan(core.WorkspaceContext, formState);
     }
 
+    private static QueryServiceSuggestion? ResolveQueryServiceSuggestion(
+        QueryGeneratorState state,
+        GenerationSession session,
+        CqrsGenerator.Core.Discovery.ProjectModel? projectModel,
+        IQueryServiceSuggestionService queryServiceSuggestionService)
+    {
+        if (!state.CreateQueryServiceMethod || state.FeatureRef is null)
+        {
+            return null;
+        }
+
+        var (featureName, featurePath) = GetFeatureMetadata(state, session);
+        return queryServiceSuggestionService.Suggest(projectModel, featureName, featurePath);
+    }
+
+    private static (string? FeatureName, string? FeaturePath) GetFeatureMetadata(QueryGeneratorState state, GenerationSession session)
+    {
+        if (state.FeatureRef is null)
+        {
+            return (null, null);
+        }
+
+        var feature = session.Artifacts.Find(state.FeatureRef);
+        if (feature is not null)
+        {
+            return (feature.Name, feature.FeaturePath);
+        }
+
+        return (state.FeatureRef.DisplayName ?? state.FeatureRef.Name, state.FeatureRef.FeaturePath);
+    }
+
     private static string? GetDtoName(QueryGeneratorState state, GenerationSession session)
     {
-        if (state.ResultDtoNodeId is null)
+        if (state.ResultDtoRef is null)
             return state.ExistingResultDtoName;
 
-        var dtoNode = session.FindNode(state.ResultDtoNodeId.Value);
+        if (state.ResultDtoRef.IsFromProject || !state.ResultDtoRef.NodeId.HasValue)
+        {
+            return state.ResultDtoRef.Name;
+        }
+
+        var dtoNode = session.FindNode(state.ResultDtoRef.NodeId.Value);
         if (dtoNode?.State is DtoGeneratorState dtoState)
         {
             var suffix = dtoState.SuffixIndex >= 0 && dtoState.SuffixIndex < 2

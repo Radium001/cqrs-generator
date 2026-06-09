@@ -5,9 +5,9 @@ namespace CqrsGenerator.Gui.Services.Generators;
 
 public sealed class AddQueryScenarioDefinition : IGeneratorScenarioDefinition
 {
-    private readonly Func<IEmbeddedSessionHost, AddQueryRootSessionViewModel> _factory;
+    private readonly Func<AddQueryRootSessionViewModel> _factory;
 
-    public AddQueryScenarioDefinition(Func<IEmbeddedSessionHost, AddQueryRootSessionViewModel> factory)
+    public AddQueryScenarioDefinition(Func<AddQueryRootSessionViewModel> factory)
     {
         _factory = factory;
         Descriptor = new GenerationActionDescriptor("add-query", "Add Query", "Application", "Ready", true);
@@ -17,6 +17,5 @@ public sealed class AddQueryScenarioDefinition : IGeneratorScenarioDefinition
 
     public bool IsAvailable(WorkspaceState state) => true;
 
-    public IRootGeneratorSessionViewModel CreateRootSession(IEmbeddedSessionHost embeddedSessionHost) =>
-        _factory(embeddedSessionHost);
+    public IRootGeneratorSessionViewModel CreateRootSession() => _factory();
 }

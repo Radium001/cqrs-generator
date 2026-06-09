@@ -5,7 +5,6 @@ using CommunityToolkit.Mvvm.Input;
 using CqrsGenerator.Core.Configuration;
 using CqrsGenerator.Core.Discovery;
 using CqrsGenerator.Core.Generation;
-using CqrsGenerator.Gui.Collections;
 using CqrsGenerator.Gui.Models;
 using CqrsGenerator.Gui.Services;
 using CqrsGenerator.Gui.Session;
@@ -14,7 +13,7 @@ using CqrsGenerator.Gui.Session.States;
 namespace CqrsGenerator.Gui.ViewModels.Generators;
 
 public sealed partial class AddWebPageRootSessionViewModel : ObservableObject,
-    IPlanBuildingRootSessionViewModel,
+    IRootGeneratorSessionViewModel,
     IWorkspaceAwareGeneratorSessionViewModel,
     IGeneratorNodeEditorViewModel
 {
@@ -23,9 +22,10 @@ public sealed partial class AddWebPageRootSessionViewModel : ObservableObject,
     private bool _isSyncingFeature;
     private bool _isSyncingPageName;
     private bool _isSyncingRoute;
+    private bool _isSyncingQuerySelection;
     private bool _pageNameAutoDerived = true;
     private bool _routeAutoDerived = true;
-    private readonly WebPageGeneratorState? _sessionState;
+    private WebPageGeneratorState? _sessionState;
     private GenerationSession? _generationSession;
     private IGenerationSessionNavigator? _navigator;
 
@@ -34,7 +34,6 @@ public sealed partial class AddWebPageRootSessionViewModel : ObservableObject,
 
     public AddWebPageRootSessionViewModel(
         GenerationActionDescriptor actionDescriptor,
-        IEmbeddedSessionHost embeddedSessionHost,
         IAddWebPagePlanService webPagePlanService,
         IAddQueryPlanService queryPlanService,
         IAddQueryScenarioOutlineBuilder queryScenarioOutlineBuilder,
@@ -67,8 +66,38 @@ public sealed partial class AddWebPageRootSessionViewModel : ObservableObject,
         QueryPicker = new QueryPickerViewModel();
         QueryPicker.Picker.SelectionChanged += () =>
         {
+            if (_isSyncingQuerySelection)
+            {
+                return;
+            }
+
+            SyncToSessionState();
             OnPropertyChanged(nameof(HasUnsavedChanges));
             OnPropertyChanged(nameof(CanBuildPlan));
+        };
+        QueryPicker.EditRequested = option =>
+        {
+            if (option.NodeId is Guid nodeId)
+            {
+                _navigator?.OpenNode(nodeId);
+            }
+        };
+        QueryPicker.RemoveRequested = option =>
+        {
+            if (option.NodeId is not Guid nodeId || _navigator is null)
+            {
+                return;
+            }
+
+            if (_navigator.RemoveNode(nodeId))
+            {
+                var toRemove = _sessionState?.QueryRefs.FirstOrDefault(r => r.NodeId == nodeId);
+                if (toRemove is not null)
+                {
+                    _sessionState!.QueryRefs.Remove(toRemove);
+                }
+                RefreshQueryChoices();
+            }
         };
         OpenCreateQueryCommand = new RelayCommand(OpenCreateQuery, () => Node is not null);
 
@@ -89,6 +118,11 @@ public sealed partial class AddWebPageRootSessionViewModel : ObservableObject,
         {
             var state = new WebPageGeneratorState { PageName = "NewPage" };
             _node = navigator.CreateRoot(GeneratorNodeKind.WebPage, state);
+            _sessionState = state;
+        }
+        else if (_node.State is WebPageGeneratorState existingState)
+        {
+            _sessionState = existingState;
         }
     }
 
@@ -158,16 +192,20 @@ public sealed partial class AddWebPageRootSessionViewModel : ObservableObject,
 
     partial void OnSelectedFeatureChanged(FeatureItemViewModel? value)
     {
+        if (_isSyncingFeature)
+        {
+            OnPropertyChanged(nameof(CanBuildPlan));
+            OnPropertyChanged(nameof(HasUnsavedChanges));
+            return;
+        }
+
         SyncToSessionState();
         OnPropertyChanged(nameof(CanBuildPlan));
         OnPropertyChanged(nameof(HasUnsavedChanges));
 
-        if (!_isSyncingFeature)
-        {
-            _isSyncingFeature = true;
-            FeaturePicker.SelectRawItem(value);
-            _isSyncingFeature = false;
-        }
+        _isSyncingFeature = true;
+        FeaturePicker.SelectRawItem(value);
+        _isSyncingFeature = false;
 
         if (_routeAutoDerived && value is not null)
         {
@@ -185,20 +223,7 @@ public sealed partial class AddWebPageRootSessionViewModel : ObservableObject,
 
         if (_projectModel is not null)
         {
-            var appFeaturePath = GetAppFeaturePath();
-            if (appFeaturePath is not null)
-            {
-                var queries = _projectModel.Queries
-                    .Where(q => string.Equals(q.FeaturePath, appFeaturePath, StringComparison.OrdinalIgnoreCase))
-                    .OrderBy(q => q.Name, StringComparer.OrdinalIgnoreCase)
-                    .ToArray();
-
-                QueryPicker.SetDiscovered(queries);
-            }
-            else
-            {
-                QueryPicker.SetDiscovered(Array.Empty<QueryInfo>());
-            }
+            RefreshQueryChoices();
         }
     }
 
@@ -215,16 +240,21 @@ public sealed partial class AddWebPageRootSessionViewModel : ObservableObject,
         if (_sessionState is null) return;
         _sessionState.PageName = PageNameCyclic.FullText;
         _sessionState.Route = Route;
-        if (SelectedFeature is not null)
+        _sessionState.FeatureRef = SelectedFeature?.Ref;
+        _sessionState.QueryRefs.Clear();
+        foreach (var option in QueryPicker.GetSelectedOptionsByKey())
         {
-            _sessionState.FeaturePath = SelectedFeature.RelativePath;
+            if (option.Ref is not null)
+            {
+                _sessionState.QueryRefs.Add(option.Ref);
+            }
         }
     }
 
     private void ReloadProject(ProjectModel? project)
     {
         _projectModel = project;
-        var previousFeaturePath = SelectedFeature?.RelativePath;
+        var previousFeatureRef = _sessionState?.FeatureRef;
 
         AvailableWebFeatures.Clear();
 
@@ -236,7 +266,13 @@ public sealed partial class AddWebPageRootSessionViewModel : ObservableObject,
 
         var webFeatures = project.WebFeatures
             .OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase)
-            .Select(f => new FeatureItemViewModel(f.Name, f.RelativePath))
+            .Select(f => new FeatureItemViewModel(new ArtifactRef(
+                GeneratorNodeKind.Feature,
+                ArtifactOrigin.Project,
+                f.Name,
+                FeaturePath: f.RelativePath,
+                ProjectPath: f.Path,
+                DisplayName: f.Name)))
             .ToList();
 
         foreach (var feature in webFeatures)
@@ -247,7 +283,9 @@ public sealed partial class AddWebPageRootSessionViewModel : ObservableObject,
         FeaturePicker.Items = webFeatures;
 
         var match = webFeatures.FirstOrDefault(f =>
-            string.Equals(f.RelativePath, previousFeaturePath, StringComparison.OrdinalIgnoreCase))
+            previousFeatureRef is not null &&
+            f.Ref is not null &&
+            ArtifactRefEquals(f.Ref, previousFeatureRef))
             ?? webFeatures.FirstOrDefault();
 
         _isSyncingFeature = true;
@@ -264,6 +302,8 @@ public sealed partial class AddWebPageRootSessionViewModel : ObservableObject,
         StatusText = webFeatures.Count == 0
             ? "No web features discovered."
             : "Configure Add Web Page.";
+
+        RefreshQueryChoices();
     }
 
     private void OnFeaturePickerChanged(object? sender, PropertyChangedEventArgs e)
@@ -324,9 +364,65 @@ public sealed partial class AddWebPageRootSessionViewModel : ObservableObject,
 
     private void OpenCreateQuery()
     {
-        if (Node is null || _navigator is null) return;
-        var state = new QueryGeneratorState { QueryName = "Get" };
-        var child = _navigator.CreateChild(Node, GeneratorNodeKind.Query, state);
+        if (Node is null || _navigator is null || _generationSession is null) return;
+        var state = new QueryGeneratorState { QueryName = "Get", FeatureRef = SelectedFeature?.Ref };
+        var child = _navigator.CreateChild(Node, GeneratorNodeKind.Query, state, "Query");
         _navigator.OpenNode(child.Id);
+    }
+
+    private void RefreshQueryChoices()
+    {
+        if (_projectModel is null)
+        {
+            QueryPicker.SetDiscovered(Array.Empty<AvailableArtifactItem>());
+            return;
+        }
+
+        var appFeaturePath = GetAppFeaturePath();
+        if (appFeaturePath is null)
+        {
+            QueryPicker.SetDiscovered(Array.Empty<AvailableArtifactItem>());
+            return;
+        }
+
+        var selectedReferences = (_sessionState?.QueryRefs ?? []).ToList();
+        _isSyncingQuerySelection = true;
+        try
+        {
+            if (_generationSession is not null)
+            {
+                var queries = _generationSession.Artifacts.GetQueries(appFeaturePath);
+                QueryPicker.SetDiscovered(queries);
+                QueryPicker.SetSelectedQueries(selectedReferences);
+            }
+            else
+            {
+                var queries = _projectModel.Queries
+                    .Where(q => string.Equals(q.FeaturePath, appFeaturePath, StringComparison.OrdinalIgnoreCase))
+                    .OrderBy(q => q.Name, StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+                QueryPicker.SetDiscovered(queries);
+                QueryPicker.SetSelectedQueries(selectedReferences);
+            }
+        }
+        finally
+        {
+            _isSyncingQuerySelection = false;
+        }
+
+        SyncToSessionState();
+    }
+
+    private static bool ArtifactRefEquals(ArtifactRef left, ArtifactRef right)
+    {
+        if (left.NodeId.HasValue && right.NodeId.HasValue)
+        {
+            return left.NodeId == right.NodeId;
+        }
+
+        return left.Kind == right.Kind &&
+               left.Origin == right.Origin &&
+               string.Equals(left.Name, right.Name, StringComparison.OrdinalIgnoreCase) &&
+               string.Equals(left.FeaturePath, right.FeaturePath, StringComparison.OrdinalIgnoreCase);
     }
 }

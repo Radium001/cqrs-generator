@@ -4,7 +4,6 @@ using CommunityToolkit.Mvvm.Input;
 using CqrsGenerator.Core.Configuration;
 using CqrsGenerator.Core.Discovery;
 using CqrsGenerator.Core.Generation;
-using CqrsGenerator.Gui.Collections;
 using CqrsGenerator.Gui.Models;
 using CqrsGenerator.Gui.Services;
 using CqrsGenerator.Gui.Session;
@@ -14,7 +13,7 @@ using CqrsGenerator.Gui.ViewModels;
 namespace CqrsGenerator.Gui.ViewModels.Generators;
 
 public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
-    IPlanBuildingRootSessionViewModel,
+    IRootGeneratorSessionViewModel,
     IWorkspaceAwareGeneratorSessionViewModel,
     IGeneratorNodeEditorViewModel
 {
@@ -33,8 +32,10 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
     private bool _isSyncingQueryName;
     private QueryServiceSuggestion? _queryServiceSuggestion;
     private bool _isSyncingMethodName;
+    private bool _isSyncingResultTypeSelection;
+    private bool _isReloadingProject;
     private bool _methodNameAutoDerived = true;
-    private readonly QueryGeneratorState? _sessionState;
+    private QueryGeneratorState? _sessionState;
     private GenerationSession? _generationSession;
     private IGenerationSessionNavigator? _navigator;
 
@@ -43,7 +44,6 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
 
     public AddQueryRootSessionViewModel(
         GenerationActionDescriptor? actionDescriptor,
-        IEmbeddedSessionHost embeddedSessionHost,
         IAddQueryPlanService planService,
         IAddDtoPlanService? addDtoPlanService,
         IAddDtoScenarioOutlineBuilder? addDtoScenarioOutlineBuilder,
@@ -65,9 +65,9 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
         SessionId = _isStandalone
             ? $"root:{actionDescriptor!.ActionId}"
             : $"child:create-query:{Guid.NewGuid():N}";
-        FeatureItems = new RuntimeItemCollection<FeatureItemViewModel>(f => f.Name);
+        FeatureItems = [];
         Parameters = [];
-        ResultTypeItems = new RuntimeItemCollection<QueryDtoChoiceViewModel>(dto => dto.Name);
+        ResultTypeItems = [];
 
         FeaturePicker = new WrappedListPickerViewModel
         {
@@ -115,6 +115,10 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
         RemoveParameterCommand = new RelayCommand<PropertyEntryViewModel>(RemoveParameter);
         OpenCreateDtoCommand = new RelayCommand(OpenCreateDto, () => Node is not null);
         OpenCreateFeatureCommand = new RelayCommand(OpenCreateFeature, () => Node is not null);
+        EditSelectedDtoCommand = new RelayCommand(EditSelectedDto, () => SelectedDtoChoice?.NodeId is not null);
+        RemoveSelectedDtoCommand = new RelayCommand(RemoveSelectedDto, () => SelectedDtoChoice?.NodeId is not null);
+        EditSelectedFeatureCommand = new RelayCommand(EditSelectedFeature, () => SelectedFeature?.NodeId is not null);
+        RemoveSelectedFeatureCommand = new RelayCommand(RemoveSelectedFeature, () => SelectedFeature?.NodeId is not null);
         ParameterEditor = new PropertyEntryListEditorViewModel(
             Parameters,
             AddParameterCommand,
@@ -147,6 +151,11 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
         {
             var state = new QueryGeneratorState { QueryName = "Get" };
             _node = navigator.CreateRoot(GeneratorNodeKind.Query, state);
+            _sessionState = state;
+        }
+        else if (_node?.State is QueryGeneratorState existingState)
+        {
+            _sessionState = existingState;
         }
     }
 
@@ -201,9 +210,9 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
         SelectedDtoSelection is not null &&
         !SelectedDtoSelectionBlocked;
 
-    public RuntimeItemCollection<FeatureItemViewModel> FeatureItems { get; }
+    public ObservableCollection<FeatureItemViewModel> FeatureItems { get; }
 
-    public RuntimeItemCollection<QueryDtoChoiceViewModel> ResultTypeItems { get; }
+    public ObservableCollection<QueryDtoChoiceViewModel> ResultTypeItems { get; }
 
     public ObservableCollection<PropertyEntryViewModel> Parameters { get; }
 
@@ -233,9 +242,25 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
 
     public IRelayCommand OpenCreateFeatureCommand { get; }
 
+    public IRelayCommand EditSelectedDtoCommand { get; }
+
+    public IRelayCommand RemoveSelectedDtoCommand { get; }
+
+    public IRelayCommand EditSelectedFeatureCommand { get; }
+
+    public IRelayCommand RemoveSelectedFeatureCommand { get; }
+
     public bool ShowCreateDtoButton => Node is not null && _navigator is not null;
 
     public bool ShowCreateFeatureButton => Node is not null && _navigator is not null;
+
+    public bool CanEditSelectedDto => SelectedDtoChoice?.NodeId is not null;
+
+    public bool CanRemoveSelectedDto => SelectedDtoChoice?.NodeId is not null;
+
+    public bool CanEditSelectedFeature => SelectedFeature?.NodeId is not null;
+
+    public bool CanRemoveSelectedFeature => SelectedFeature?.NodeId is not null;
 
     [ObservableProperty]
     private FeatureItemViewModel? _selectedFeature;
@@ -280,9 +305,6 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
 
     partial void OnSelectedFeatureChanged(FeatureItemViewModel? value)
     {
-        OnPropertyChanged(nameof(CanBuildPlan));
-        OnPropertyChanged(nameof(HasUnsavedChanges));
-
         if (!_isSyncingFeature)
         {
             _isSyncingFeature = true;
@@ -290,11 +312,27 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
             _isSyncingFeature = false;
         }
 
+        if (_isReloadingProject)
+        {
+            return;
+        }
+
+        SyncToSessionState();
+        OnPropertyChanged(nameof(CanBuildPlan));
+        OnPropertyChanged(nameof(HasUnsavedChanges));
+        OnPropertyChanged(nameof(CanEditSelectedFeature));
+        OnPropertyChanged(nameof(CanRemoveSelectedFeature));
+        EditSelectedFeatureCommand.NotifyCanExecuteChanged();
+        RemoveSelectedFeatureCommand.NotifyCanExecuteChanged();
+
         if (_projectModel is null || value is null)
         {
-            ResultTypeItems.SetDiscovered([]);
+            ResultTypeItems.Clear();
             ResultTypePicker.RawItems = ResultTypeItems;
             SetQueryServiceSuggestion(null);
+            OnPropertyChanged(nameof(SelectedDtoChoice));
+            OnPropertyChanged(nameof(CanEditSelectedDto));
+            OnPropertyChanged(nameof(CanRemoveSelectedDto));
             return;
         }
         RefreshDtoChoices();
@@ -308,6 +346,11 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
 
     partial void OnQueryNameChanged(string value)
     {
+        if (_isReloadingProject)
+        {
+            return;
+        }
+
         SyncToSessionState();
         OnPropertyChanged(nameof(CanBuildPlan));
         OnPropertyChanged(nameof(HasUnsavedChanges));
@@ -326,21 +369,31 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
             _isSyncingMethodName = false;
         }
 
+        if (_queryServiceSuggestionService is not null && _projectModel is not null && SelectedFeature is not null)
+        {
+            var suggestion = _queryServiceSuggestionService.Suggest(_projectModel, SelectedFeature.Name, SelectedFeature.RelativePath);
+            SetQueryServiceSuggestion(suggestion);
+        }
+
         RefreshDtoChoices();
     }
 
     private void ReloadProject(ProjectModel? project)
     {
+        var previousResultDtoRef = _sessionState?.ResultDtoRef;
+        _isReloadingProject = true;
+        try
+        {
         _projectModel = project;
         _methodNameAutoDerived = true;
         _isSyncingMethodName = true;
         MethodNameCyclic.Text = QueryNameCyclic.FullText;
         _isSyncingMethodName = false;
-        var previousFeaturePath = SelectedFeature?.RelativePath;
+        var previousFeatureRef = _sessionState?.FeatureRef;
 
-        FeatureItems.ClearRuntime();
+        FeatureItems.Clear();
         FeaturePicker.UnlockSelection();
-        ResultTypeItems.ClearRuntime();
+        ResultTypeItems.Clear();
         ResultTypePicker.UnlockSelection();
         SetQueryServiceSuggestion(null);
 
@@ -354,12 +407,11 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
             return;
         }
 
-        var features = project.Features
-            .OrderBy(feature => feature.Name, StringComparer.OrdinalIgnoreCase)
-            .Select(feature => new FeatureItemViewModel(feature.Name, feature.RelativePath))
-            .ToList();
-
-        FeatureItems.SetDiscovered(features);
+        var features = BuildFeatureItems(project);
+        foreach (var feature in features)
+        {
+            FeatureItems.Add(feature);
+        }
         FeaturePicker.Items = FeatureItems;
 
         if (_fixedFeaturePath is not null)
@@ -384,7 +436,11 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
         else
         {
             var match = features.FirstOrDefault(feature =>
-                string.Equals(feature.RelativePath, previousFeaturePath, StringComparison.OrdinalIgnoreCase))
+                previousFeatureRef is not null &&
+                feature.Ref is not null &&
+                ArtifactRefEquals(feature.Ref, previousFeatureRef))
+                ?? features.FirstOrDefault(feature =>
+                string.Equals(feature.RelativePath, SelectedFeature?.RelativePath, StringComparison.OrdinalIgnoreCase))
                 ?? features.FirstOrDefault();
 
             _isSyncingFeature = true;
@@ -400,6 +456,43 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
         StatusText = features.Count == 0
             ? "No features discovered."
             : "Configure Add Query.";
+
+        if (previousResultDtoRef is not null && _sessionState is not null)
+        {
+            _sessionState.ResultDtoRef = previousResultDtoRef;
+        }
+        }
+        finally
+        {
+            _isReloadingProject = false;
+        }
+
+        if (_projectModel is not null && SelectedFeature is not null)
+        {
+            RefreshDtoChoices();
+
+            if (_queryServiceSuggestionService is not null)
+            {
+                var suggestion = _queryServiceSuggestionService.Suggest(_projectModel, SelectedFeature.Name, SelectedFeature.RelativePath);
+                SetQueryServiceSuggestion(suggestion);
+            }
+        }
+
+        if (previousResultDtoRef is not null && _sessionState is not null)
+        {
+            _sessionState.ResultDtoRef = previousResultDtoRef;
+            SelectDto(previousResultDtoRef);
+        }
+
+        RestoreDtoSelection();
+        SyncToSessionState();
+        OnPropertyChanged(nameof(CanBuildPlan));
+        OnPropertyChanged(nameof(CanComplete));
+        OnPropertyChanged(nameof(HasUnsavedChanges));
+        OnPropertyChanged(nameof(CanEditSelectedFeature));
+        OnPropertyChanged(nameof(CanRemoveSelectedFeature));
+        EditSelectedFeatureCommand.NotifyCanExecuteChanged();
+        RemoveSelectedFeatureCommand.NotifyCanExecuteChanged();
     }
 
     private void OnQueryNameCyclicChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -449,6 +542,11 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
 
     private void OnResultTypePickerChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
+        if (_isSyncingResultTypeSelection)
+        {
+            return;
+        }
+
         if (e.PropertyName is nameof(WrappedListPickerViewModel.SelectedPrefixIndex)
             or nameof(WrappedListPickerViewModel.SelectedItem)
             or nameof(WrappedListPickerViewModel.SearchText)
@@ -463,6 +561,8 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
             OnPropertyChanged(nameof(DtoPromotionHintText));
             OnPropertyChanged(nameof(SelectedDtoRequiresPromotion));
             OnPropertyChanged(nameof(SelectedDtoSelectionBlocked));
+            EditSelectedDtoCommand.NotifyCanExecuteChanged();
+            RemoveSelectedDtoCommand.NotifyCanExecuteChanged();
         }
     }
 
@@ -495,53 +595,47 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
     {
         if (_projectModel is null || SelectedFeature is null)
         {
-            ResultTypeItems.SetDiscovered([]);
+            ResultTypeItems.Clear();
             ResultTypePicker.RawItems = ResultTypeItems;
             return;
         }
 
         var featurePath = SelectedFeature.RelativePath;
         var queryBaseName = GetQueryBaseName();
-        var discoveredDtos = _projectModel.Dtos
-            .Where(dto => string.Equals(dto.FeaturePath, featurePath, StringComparison.OrdinalIgnoreCase))
-            .Where(dto => dto.LocationKind == DtoLocationKind.SharedFeatureDto
-                || !string.Equals(dto.OwnerQueryName, queryBaseName, StringComparison.OrdinalIgnoreCase))
-            .OrderBy(dto => dto.LocationKind == DtoLocationKind.SharedFeatureDto ? 0 : 1)
-            .ThenBy(dto => dto.DisplayName, StringComparer.OrdinalIgnoreCase)
-            .Select(dto => new QueryDtoChoiceViewModel(
-                dto.Name,
-                dto.DisplayName,
-                dto.Namespace,
-                dto.LocationKind,
-                dto.OwnerQueryName,
-                dto.Path,
-                isSelectable: dto.LocationKind == DtoLocationKind.SharedFeatureDto || !HasSharedConflict(dto, featurePath),
-                selectionBlockedReason: dto.LocationKind == DtoLocationKind.LocalQueryDto && HasSharedConflict(dto, featurePath)
-                    ? "A shared DTO with the same name already exists."
-                    : null))
-            .ToList();
+        var discoveredDtos = BuildDtoChoices(featurePath, queryBaseName);
+        var selectedDtoRef = _sessionState?.ResultDtoRef ?? SelectedDtoChoice?.Ref;
 
-        if (_generationSession is not null)
+        _isSyncingResultTypeSelection = true;
+        try
         {
-            var sessionDtos = _generationSession.Artifacts.GetDtos(featurePath);
-            foreach (var sessionDto in sessionDtos)
+            ResultTypeItems.Clear();
+            foreach (var dto in discoveredDtos)
             {
-                if (!discoveredDtos.Any(d => d.Name == sessionDto.Name))
-                {
-                    discoveredDtos.Add(new QueryDtoChoiceViewModel(
-                        sessionDto.Name,
-                        sessionDto.Name + " (session)",
-                        string.Empty,
-                        DtoLocationKind.LocalQueryDto,
-                        queryBaseName,
-                        string.Empty,
-                        isRuntime: true));
-                }
+                ResultTypeItems.Add(dto);
             }
+
+            ResultTypePicker.RawItems = ResultTypeItems;
+            SelectDto(selectedDtoRef);
+        }
+        finally
+        {
+            _isSyncingResultTypeSelection = false;
         }
 
-        ResultTypeItems.SetDiscovered(discoveredDtos);
-        ResultTypePicker.RawItems = ResultTypeItems;
+        if (selectedDtoRef is not null && SelectedDtoChoice?.Ref is null && _sessionState is not null)
+        {
+            _sessionState.ResultDtoRef = selectedDtoRef;
+        }
+
+        SyncToSessionState();
+        OnPropertyChanged(nameof(SelectedDtoChoice));
+        OnPropertyChanged(nameof(SelectedDtoSelection));
+        OnPropertyChanged(nameof(ShowDtoPromotionHint));
+        OnPropertyChanged(nameof(DtoPromotionHintText));
+        OnPropertyChanged(nameof(SelectedDtoRequiresPromotion));
+        OnPropertyChanged(nameof(SelectedDtoSelectionBlocked));
+        EditSelectedDtoCommand.NotifyCanExecuteChanged();
+        RemoveSelectedDtoCommand.NotifyCanExecuteChanged();
     }
 
     private AddQueryFormState CreateFormState()
@@ -657,11 +751,15 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
     {
         if (_sessionState is null) return;
         _sessionState.QueryName = QueryNameCyclic.FullText.Trim();
-        if (SelectedFeature is not null)
-        {
-            _sessionState.FeaturePath = SelectedFeature.RelativePath;
-        }
+        _sessionState.FeatureRef = SelectedFeature?.Ref;
+        _sessionState.ResultDtoRef = SelectedDtoChoice?.Ref;
         _sessionState.ExistingResultDtoName = ResultTypePicker.SelectedBaseName;
+        _sessionState.CreateQueryServiceMethod = CreateQueryServiceMethod;
+        _sessionState.MethodName = GetMethodName();
+        _sessionState.GenerateHandlerBody = GenerateHandlerBody;
+        _sessionState.GenerateQueryServiceBody = GenerateQueryServiceBody;
+        _sessionState.UpdateWebImports = UpdateWebImports;
+        _sessionState.ResponseShape = GetShapeFromPrefixIndex(ResultTypePicker.SelectedPrefixIndex);
         _sessionState.Parameters.Clear();
         foreach (var p in Parameters.Where(p => !string.IsNullOrWhiteSpace(p.Type) && !string.IsNullOrWhiteSpace(p.Name)))
         {
@@ -671,17 +769,230 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
 
     private void OpenCreateDto()
     {
-        if (Node is null || _navigator is null) return;
-        var state = new DtoGeneratorState { BaseName = "NewDto" };
-        var child = _navigator.CreateChild(Node, GeneratorNodeKind.Dto, state);
+        if (Node is null || _navigator is null || _generationSession is null) return;
+        var state = new DtoGeneratorState
+        {
+            BaseName = "NewDto",
+            FeatureRef = _sessionState?.FeatureRef ?? SelectedFeature?.Ref,
+        };
+        var child = _navigator.CreateChild(Node, GeneratorNodeKind.Dto, state, "ResultDto");
         _navigator.OpenNode(child.Id);
     }
 
     private void OpenCreateFeature()
     {
-        if (Node is null || _navigator is null) return;
+        if (Node is null || _navigator is null || _generationSession is null) return;
         var state = new FeatureGeneratorState { FeatureName = "NewFeature" };
-        var child = _navigator.CreateChild(Node, GeneratorNodeKind.Feature, state);
+        var child = _navigator.CreateChild(Node, GeneratorNodeKind.Feature, state, "Feature");
         _navigator.OpenNode(child.Id);
+    }
+
+    private void EditSelectedDto()
+    {
+        if (SelectedDtoChoice?.NodeId is Guid nodeId)
+        {
+            _navigator?.OpenNode(nodeId);
+        }
+    }
+
+    private void RemoveSelectedDto()
+    {
+        if (SelectedDtoChoice?.NodeId is not Guid nodeId || _navigator is null)
+        {
+            return;
+        }
+
+        if (_navigator.RemoveNode(nodeId))
+        {
+            if (_sessionState is not null)
+            {
+                _sessionState.ResultDtoRef = null;
+                _sessionState.ExistingResultDtoName = null;
+            }
+            RefreshDtoChoices();
+            ResultTypePicker.SelectRawItem(null);
+            SyncToSessionState();
+        }
+    }
+
+    private void EditSelectedFeature()
+    {
+        if (SelectedFeature?.NodeId is Guid nodeId)
+        {
+            _navigator?.OpenNode(nodeId);
+        }
+    }
+
+    private void RemoveSelectedFeature()
+    {
+        if (SelectedFeature?.NodeId is not Guid nodeId || _navigator is null)
+        {
+            return;
+        }
+
+        if (_navigator.RemoveNode(nodeId))
+        {
+            if (_sessionState is not null)
+            {
+                _sessionState.FeatureRef = null;
+            }
+            ReloadProject(_projectModel);
+            SyncToSessionState();
+        }
+    }
+
+    private List<QueryDtoChoiceViewModel> BuildDtoChoices(string featurePath, string queryBaseName)
+    {
+        var discoveredDtos = new List<QueryDtoChoiceViewModel>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (_projectModel is not null)
+        {
+            foreach (var dto in _projectModel.Dtos
+                .Where(dto => string.Equals(dto.FeaturePath, featurePath, StringComparison.OrdinalIgnoreCase))
+                .Where(dto => dto.LocationKind == DtoLocationKind.SharedFeatureDto
+                    || !string.Equals(dto.OwnerQueryName, queryBaseName, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(dto => dto.LocationKind == DtoLocationKind.SharedFeatureDto ? 0 : 1)
+                .ThenBy(dto => dto.DisplayName, StringComparer.OrdinalIgnoreCase))
+            {
+                var reference = new ArtifactRef(
+                    GeneratorNodeKind.Dto,
+                    ArtifactOrigin.Project,
+                    dto.Name,
+                    FeaturePath: dto.FeaturePath,
+                    ProjectPath: dto.Path,
+                    Namespace: dto.Namespace,
+                    OwnerName: dto.OwnerQueryName,
+                    DisplayName: dto.DisplayName);
+                var blocked = dto.LocationKind == DtoLocationKind.LocalQueryDto && HasSharedConflict(dto, featurePath);
+                if (seen.Add(GetDtoKey(reference)))
+                {
+                    discoveredDtos.Add(new QueryDtoChoiceViewModel(
+                        reference,
+                        dto.DisplayName,
+                        dto.Namespace,
+                        dto.LocationKind,
+                        dto.OwnerQueryName,
+                        dto.Path,
+                        isSelectable: !blocked,
+                        selectionBlockedReason: blocked ? "A shared DTO with the same name already exists." : null));
+                }
+            }
+        }
+
+        if (_generationSession is not null)
+        {
+            foreach (var sessionDto in _generationSession.Artifacts.GetDtos(featurePath).OrderBy(dto => dto.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                if (seen.Add(GetDtoKey(sessionDto.Ref)))
+                {
+                    discoveredDtos.Add(new QueryDtoChoiceViewModel(
+                        sessionDto.Ref,
+                        sessionDto.DisplayName,
+                        sessionDto.Ref.Namespace ?? string.Empty,
+                        DtoLocationKind.LocalQueryDto,
+                        queryBaseName,
+                        sessionDto.Ref.ProjectPath,
+                        isSelectable: sessionDto.IsSelectable,
+                        selectionBlockedReason: sessionDto.SelectionBlockedReason));
+                }
+            }
+        }
+
+        return discoveredDtos;
+    }
+
+    private void RestoreDtoSelection()
+    {
+        if (_sessionState?.ResultDtoRef is { } dtoRef)
+        {
+            SelectDto(dtoRef);
+        }
+    }
+
+    private void SelectDto(ArtifactRef? reference)
+    {
+        if (reference is null)
+        {
+            return;
+        }
+
+        var match = ResultTypeItems.FirstOrDefault(dto => dto.Ref is not null && ArtifactRefEquals(dto.Ref, reference));
+        if (match is not null)
+        {
+            ResultTypePicker.SelectRawItem(match);
+        }
+    }
+
+    private void SelectFeature(ArtifactRef? reference)
+    {
+        if (reference is null)
+        {
+            return;
+        }
+
+        var match = FeatureItems.FirstOrDefault(feature => feature.Ref is not null && ArtifactRefEquals(feature.Ref, reference));
+        if (match is not null)
+        {
+            _isSyncingFeature = true;
+            SelectedFeature = match;
+            FeaturePicker.SelectRawItem(match);
+            _isSyncingFeature = false;
+        }
+    }
+
+    private static bool ArtifactRefEquals(ArtifactRef left, ArtifactRef right)
+    {
+        if (left.NodeId.HasValue && right.NodeId.HasValue)
+        {
+            return left.NodeId == right.NodeId;
+        }
+
+        return left.Kind == right.Kind &&
+               left.Origin == right.Origin &&
+               string.Equals(left.Name, right.Name, StringComparison.OrdinalIgnoreCase) &&
+               string.Equals(left.FeaturePath, right.FeaturePath, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string GetDtoKey(ArtifactRef reference)
+    {
+        return reference.NodeId.HasValue
+            ? $"session:{reference.NodeId.Value:D}"
+            : $"project:{reference.Name}:{reference.FeaturePath}";
+    }
+
+    private List<FeatureItemViewModel> BuildFeatureItems(ProjectModel project)
+    {
+        var items = new List<FeatureItemViewModel>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var feature in project.Features.OrderBy(feature => feature.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            var reference = new ArtifactRef(
+                GeneratorNodeKind.Feature,
+                ArtifactOrigin.Project,
+                feature.Name,
+                FeaturePath: feature.RelativePath,
+                ProjectPath: feature.Path,
+                DisplayName: feature.Name);
+            if (seen.Add(reference.FeaturePath ?? reference.Name))
+            {
+                items.Add(new FeatureItemViewModel(reference));
+            }
+        }
+
+        if (_generationSession is not null)
+        {
+            foreach (var feature in _generationSession.Artifacts.GetFeatures().OrderBy(feature => feature.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                var key = feature.Ref.NodeId.HasValue ? $"session:{feature.Ref.NodeId.Value:D}" : feature.FeaturePath ?? feature.Name;
+                if (seen.Add(key))
+                {
+                    items.Add(new FeatureItemViewModel(feature.Ref));
+                }
+            }
+        }
+
+        return items;
     }
 }

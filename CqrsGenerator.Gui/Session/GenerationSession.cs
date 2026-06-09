@@ -34,4 +34,10 @@ public sealed partial class GenerationSession : ObservableObject
     {
         return Traverse().FirstOrDefault(x => x.Id == id);
     }
+
+    public void Reset()
+    {
+        Roots.Clear();
+        ActiveNode = null;
+    }
 }

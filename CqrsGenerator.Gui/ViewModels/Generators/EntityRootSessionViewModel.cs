@@ -13,7 +13,7 @@ using CqrsGenerator.Gui.ViewModels;
 namespace CqrsGenerator.Gui.ViewModels.Generators;
 
 public sealed partial class EntityRootSessionViewModel : ObservableObject,
-    IPlanBuildingRootSessionViewModel,
+    IRootGeneratorSessionViewModel,
     IWorkspaceAwareGeneratorSessionViewModel,
     IGeneratorNodeEditorViewModel
 {

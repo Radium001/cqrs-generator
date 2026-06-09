@@ -9,5 +9,5 @@ public interface IGeneratorScenarioDefinition
 
     bool IsAvailable(WorkspaceState state);
 
-    IRootGeneratorSessionViewModel CreateRootSession(IEmbeddedSessionHost embeddedSessionHost);
+    IRootGeneratorSessionViewModel CreateRootSession();
 }

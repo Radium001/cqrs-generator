@@ -30,7 +30,6 @@ public sealed class RepositoryGeneratorDefinition : GeneratorDefinition<Reposito
         var vm = new RepositoryRootSessionViewModel(
             actionDescriptor: null,
             planService,
-            null!,
             scenarioOutlineBuilder,
             null!,
             null!,
@@ -49,7 +48,9 @@ public sealed class RepositoryGeneratorDefinition : GeneratorDefinition<Reposito
         if (string.IsNullOrWhiteSpace(state.InterfaceName))
             return GeneratorValidationResult.Error("Repository interface name is required.");
 
-        if (state.EntityNodeId.HasValue && session.FindNode(state.EntityNodeId.Value) is null)
+        if (state.EntityRef?.IsFromSession == true &&
+            state.EntityRef.NodeId.HasValue &&
+            session.FindNode(state.EntityRef.NodeId.Value) is null)
             return GeneratorValidationResult.Error("Referenced entity node no longer exists.");
 
         return GeneratorValidationResult.Valid;
@@ -87,12 +88,17 @@ public sealed class RepositoryGeneratorDefinition : GeneratorDefinition<Reposito
 
     private static string? GetEntityName(RepositoryGeneratorState state, GenerationSession session)
     {
-        if (state.EntityNodeId is null)
+        if (state.EntityRef is null)
             return null;
 
-        var entityNode = session.FindNode(state.EntityNodeId.Value);
+        if (state.EntityRef.IsFromProject || !state.EntityRef.NodeId.HasValue)
+        {
+            return state.EntityRef.Name;
+        }
+
+        var entityNode = session.FindNode(state.EntityRef.NodeId.Value);
         return entityNode?.State is EntityGeneratorState entityState
             ? entityState.EntityName
-            : null;
+            : state.EntityRef.Name;
     }
 }

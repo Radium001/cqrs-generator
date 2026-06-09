@@ -32,7 +32,6 @@ public sealed class WebPageGeneratorDefinition : GeneratorDefinition<WebPageGene
         var queryServiceSuggestionService = services.ServiceProvider.GetRequiredService<IQueryServiceSuggestionService>();
         var vm = new AddWebPageRootSessionViewModel(
             new GenerationActionDescriptor("add-web-page", "Add Web Page", "UI", "Ready", true),
-            null!,
             webPagePlanService,
             queryPlanService,
             queryScenarioOutlineBuilder,
@@ -51,8 +50,9 @@ public sealed class WebPageGeneratorDefinition : GeneratorDefinition<WebPageGene
         if (string.IsNullOrWhiteSpace(state.PageName))
             return GeneratorValidationResult.Error("Page name is required.");
 
-        var danglingQueries = state.QueryNodeIds
-            .Select(id => session.FindNode(id))
+        var danglingQueries = state.QueryRefs
+            .Where(reference => reference.IsFromSession && reference.NodeId.HasValue)
+            .Select(reference => session.FindNode(reference.NodeId!.Value))
             .Where(n => n is null)
             .Count();
 
@@ -79,7 +79,7 @@ public sealed class WebPageGeneratorDefinition : GeneratorDefinition<WebPageGene
         var planService = core.ServiceProvider.GetRequiredService<IAddWebPagePlanService>();
 
         var formState = new AddWebPageFormState(
-            state.FeaturePath,
+            state.FeatureRef?.FeaturePath,
             null,
             state.PageName,
             state.Route,

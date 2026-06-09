@@ -23,11 +23,20 @@
             <shared:WrappedListPicker Grid.Row="1"
                                       DataContext="{Binding FeaturePicker}"
                                       HorizontalAlignment="Stretch" />
-            <Button Grid.Row="2"
-                    Content="Create Feature"
-                    Command="{Binding OpenCreateFeatureCommand}"
-                    HorizontalAlignment="Left"
-                    IsVisible="{Binding ShowCreateFeatureButton}" />
+            <StackPanel Grid.Row="2"
+                        Orientation="Horizontal"
+                        Spacing="8">
+              <Button Content="Create Feature"
+                      Command="{Binding OpenCreateFeatureCommand}"
+                      HorizontalAlignment="Left"
+                      IsVisible="{Binding ShowCreateFeatureButton}" />
+              <Button Content="Edit"
+                      Command="{Binding EditSelectedFeatureCommand}"
+                      IsEnabled="{Binding CanEditSelectedFeature}" />
+              <Button Content="Remove"
+                      Command="{Binding RemoveSelectedFeatureCommand}"
+                      IsEnabled="{Binding CanRemoveSelectedFeature}" />
+            </StackPanel>
           </Grid>
 
           <Grid Grid.Column="1"
@@ -65,11 +74,20 @@
                        Foreground="{DynamicResource TextUpdateBrush}"
                        TextWrapping="Wrap"
                        IsVisible="{Binding ShowDtoPromotionHint}" />
-            <Button Grid.Row="3"
-                    Content="Create DTO"
-                    Command="{Binding OpenCreateDtoCommand}"
-                    HorizontalAlignment="Left"
-                    IsVisible="{Binding ShowCreateDtoButton}" />
+            <StackPanel Grid.Row="3"
+                        Orientation="Horizontal"
+                        Spacing="8">
+              <Button Content="Create DTO"
+                      Command="{Binding OpenCreateDtoCommand}"
+                      HorizontalAlignment="Left"
+                      IsVisible="{Binding ShowCreateDtoButton}" />
+              <Button Content="Edit"
+                      Command="{Binding EditSelectedDtoCommand}"
+                      IsEnabled="{Binding CanEditSelectedDto}" />
+              <Button Content="Remove"
+                      Command="{Binding RemoveSelectedDtoCommand}"
+                      IsEnabled="{Binding CanRemoveSelectedDto}" />
+            </StackPanel>
           </Grid>
         </Grid>
       </Border>

@@ -1,5 +1,6 @@
 using CqrsGenerator.Gui.ViewModels;
 using CqrsGenerator.Gui.ViewModels.Generators;
+using CqrsGenerator.Gui.Session;
 
 namespace CqrsGenerator.Gui.Services;
 
@@ -70,7 +71,7 @@ public sealed class WorkspaceSessionService : IWorkspaceSessionService
         _workspaceStore.SetState(RecomputeCapabilities(_workspaceStore.State, rootSession));
     }
 
-    public async Task BuildPlanAsync(IPlanBuildingRootSessionViewModel? rootSession, CancellationToken cancellationToken)
+    public async Task BuildPlanAsync(IRootGeneratorSessionViewModel? rootSession, CancellationToken cancellationToken)
     {
         var currentState = _workspaceStore.State;
         var projectContext = currentState.ProjectContext;
@@ -355,7 +356,10 @@ public sealed class WorkspaceSessionService : IWorkspaceSessionService
 
     private static WorkspaceState RecomputeCapabilities(WorkspaceState state, IRootGeneratorSessionViewModel? rootSession)
     {
-        var canBuild = !state.IsScanning && state.ProjectContext is not null && rootSession?.CanBuildPlan == true;
+        var canBuild =
+            !state.IsScanning &&
+            state.ProjectContext is not null &&
+            rootSession is IGeneratorNodeEditorViewModel { Node: not null };
         var canApply =
             !state.IsScanning
             && state.CurrentPreparedApplyPackage is not null

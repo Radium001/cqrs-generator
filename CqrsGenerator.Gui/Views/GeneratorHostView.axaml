@@ -28,14 +28,14 @@
                     Spacing="8"
                     VerticalAlignment="Top">
           <Button Content="Done"
-                  Command="{Binding Stack.CompleteChildNodeCommand}"
-                  IsVisible="{Binding HasChildNode}" />
-          <Button Content="Back"
-                  Command="{Binding Stack.NavigateToParentCommand}"
-                  IsVisible="{Binding HasParentNode}" />
+                  Command="{Binding Stack.DoneNestedCommand}"
+                  IsVisible="{Binding ShowDoneButton}" />
+          <Button Content="Cancel"
+                  Command="{Binding Stack.CancelNestedCommand}"
+                  IsVisible="{Binding ShowCancelButton}" />
           <Button Content="Close"
                   Command="{Binding Stack.CloseRootCommand}"
-                  IsVisible="{Binding HasActiveAction}" />
+                  IsVisible="{Binding ShowCloseButton}" />
         </StackPanel>
       </Grid>
 

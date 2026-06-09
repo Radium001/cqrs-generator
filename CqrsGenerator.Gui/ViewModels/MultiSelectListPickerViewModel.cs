@@ -26,6 +26,14 @@ public sealed partial class MultiSelectListPickerViewModel : ObservableObject
 
     public Func<object?, string>? ItemKeySelector { get; set; }
 
+    public Func<object?, bool>? ItemCanEditSelector { get; set; }
+
+    public Func<object?, bool>? ItemCanRemoveSelector { get; set; }
+
+    public Action<object>? EditItemRequested { get; set; }
+
+    public Action<object>? RemoveItemRequested { get; set; }
+
     public IEnumerable FilteredItems { get; }
 
     [ObservableProperty]
@@ -181,6 +189,10 @@ public sealed partial class MultiSelectListPickerViewModel : ObservableObject
         {
             options.RemoveRequested?.Invoke(originalItem);
         }
+        else
+        {
+            RemoveItemRequested?.Invoke(originalItem);
+        }
 
         RemoveRuntime(originalItem);
     }
@@ -194,7 +206,10 @@ public sealed partial class MultiSelectListPickerViewModel : ObservableObject
         if (_runtimeOptions.TryGetValue(key, out var options) && options.CanEdit)
         {
             options.EditRequested?.Invoke(originalItem);
+            return;
         }
+
+        EditItemRequested?.Invoke(originalItem);
     }
 
     public void ClearRuntime()
@@ -258,6 +273,8 @@ public sealed partial class MultiSelectListPickerViewModel : ObservableObject
             {
                 IsSelected = _selectedKeys.Contains(GetItemKey(item)),
                 IsRuntime = false,
+                CanEdit = ItemCanEditSelector?.Invoke(item) ?? false,
+                CanRemove = ItemCanRemoveSelector?.Invoke(item) ?? false,
             });
         }
 

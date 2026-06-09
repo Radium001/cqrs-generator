@@ -113,7 +113,7 @@ public sealed class MainWindowViewModel
 
     private async Task BuildPlanAsync()
     {
-        await _workspaceSessionService.BuildPlanAsync(_activeRootSession as IPlanBuildingRootSessionViewModel, CancellationToken.None);
+        await _workspaceSessionService.BuildPlanAsync(_activeRootSession, CancellationToken.None);
         RefreshPlanActions();
     }
 

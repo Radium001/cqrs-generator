@@ -4,9 +4,9 @@ public interface IGenerationSessionNavigator
 {
     GeneratorNode CreateRoot(GeneratorNodeKind kind, object state);
 
-    GeneratorNode CreateChild(GeneratorNode parent, GeneratorNodeKind kind, object state);
+    GeneratorNode CreateChild(GeneratorNode parent, GeneratorNodeKind kind, object state, string? relationshipName = null);
 
-    void OpenNode(Guid nodeId);
+    bool OpenNode(Guid nodeId);
 
     void OpenParent();
 

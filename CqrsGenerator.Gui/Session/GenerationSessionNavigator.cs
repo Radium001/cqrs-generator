@@ -16,6 +16,7 @@ public sealed class GenerationSessionNavigator : IGenerationSessionNavigator
         var node = new GeneratorNode
         {
             Kind = kind,
+            Lifecycle = GeneratorNodeLifecycle.Committed,
             State = state,
             Title = kind.ToString(),
         };
@@ -23,12 +24,14 @@ public sealed class GenerationSessionNavigator : IGenerationSessionNavigator
         return node;
     }
 
-    public GeneratorNode CreateChild(GeneratorNode parent, GeneratorNodeKind kind, object state)
+    public GeneratorNode CreateChild(GeneratorNode parent, GeneratorNodeKind kind, object state, string? relationshipName = null)
     {
         var node = new GeneratorNode
         {
             Kind = kind,
+            Lifecycle = GeneratorNodeLifecycle.Draft,
             ParentId = parent.Id,
+            RelationshipName = relationshipName,
             State = state,
             Title = kind.ToString(),
         };
@@ -36,10 +39,11 @@ public sealed class GenerationSessionNavigator : IGenerationSessionNavigator
         return node;
     }
 
-    public void OpenNode(Guid nodeId)
+    public bool OpenNode(Guid nodeId)
     {
         var node = _session.FindNode(nodeId);
         _session.ActiveNode = node;
+        return node is not null;
     }
 
     public void OpenParent()
@@ -92,36 +96,73 @@ public sealed class GenerationSessionNavigator : IGenerationSessionNavigator
                 continue;
             }
 
-            if (candidate.State is CommandGeneratorState cmdState)
+            foreach (var usage in EnumerateReferences(candidate.State))
             {
-                if (cmdState.RepositoryNodeIds.Contains(nodeId))
+                if (usage.Reference.NodeId == nodeId)
                 {
-                    result.Add(new NodeUsage(candidate, nameof(CommandGeneratorState.RepositoryNodeIds)));
-                }
-            }
-            else if (candidate.State is RepositoryGeneratorState repoState)
-            {
-                if (repoState.EntityNodeId == nodeId)
-                {
-                    result.Add(new NodeUsage(candidate, nameof(RepositoryGeneratorState.EntityNodeId)));
-                }
-            }
-            else if (candidate.State is QueryGeneratorState queryState)
-            {
-                if (queryState.ResultDtoNodeId == nodeId)
-                {
-                    result.Add(new NodeUsage(candidate, nameof(QueryGeneratorState.ResultDtoNodeId)));
-                }
-            }
-            else if (candidate.State is WebPageGeneratorState webState)
-            {
-                if (webState.QueryNodeIds.Contains(nodeId))
-                {
-                    result.Add(new NodeUsage(candidate, nameof(WebPageGeneratorState.QueryNodeIds)));
+                    result.Add(new NodeUsage(candidate, usage.PropertyName));
                 }
             }
         }
 
         return result;
+    }
+
+    private static IEnumerable<(ArtifactRef Reference, string PropertyName)> EnumerateReferences(object state)
+    {
+        switch (state)
+        {
+            case QueryGeneratorState queryState:
+                if (queryState.FeatureRef is not null)
+                {
+                    yield return (queryState.FeatureRef, nameof(QueryGeneratorState.FeatureRef));
+                }
+
+                if (queryState.ResultDtoRef is not null)
+                {
+                    yield return (queryState.ResultDtoRef, nameof(QueryGeneratorState.ResultDtoRef));
+                }
+
+                yield break;
+
+            case CommandGeneratorState commandState:
+                if (commandState.FeatureRef is not null)
+                {
+                    yield return (commandState.FeatureRef, nameof(CommandGeneratorState.FeatureRef));
+                }
+
+                foreach (var repositoryRef in commandState.RepositoryRefs)
+                {
+                    yield return (repositoryRef, nameof(CommandGeneratorState.RepositoryRefs));
+                }
+
+                yield break;
+
+            case RepositoryGeneratorState repositoryState:
+                if (repositoryState.FeatureRef is not null)
+                {
+                    yield return (repositoryState.FeatureRef, nameof(RepositoryGeneratorState.FeatureRef));
+                }
+
+                if (repositoryState.EntityRef is not null)
+                {
+                    yield return (repositoryState.EntityRef, nameof(RepositoryGeneratorState.EntityRef));
+                }
+
+                yield break;
+
+            case WebPageGeneratorState webPageState:
+                if (webPageState.FeatureRef is not null)
+                {
+                    yield return (webPageState.FeatureRef, nameof(WebPageGeneratorState.FeatureRef));
+                }
+
+                foreach (var queryRef in webPageState.QueryRefs)
+                {
+                    yield return (queryRef, nameof(WebPageGeneratorState.QueryRefs));
+                }
+
+                yield break;
+        }
     }
 }

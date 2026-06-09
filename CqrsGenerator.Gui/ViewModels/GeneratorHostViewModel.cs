@@ -37,13 +37,23 @@ public sealed class GeneratorHostViewModel : ObservableObject
 
     public string EditorSummary => Stack.ActiveSessionSummary;
 
-    public bool HasActiveAction => Stack.HasActiveSession;
+    public bool HasActiveAction => Stack.HasRootSession;
 
     public bool IsLauncherVisible => !HasActiveAction;
 
     public bool HasParentNode => Stack.HasParentNode;
 
     public bool HasChildNode => Stack.HasChildNode;
+
+    public bool IsNestedActive => Stack.IsNestedActive;
+
+    public bool ShowDoneButton => IsNestedActive;
+
+    public bool ShowCancelButton => IsNestedActive;
+
+    public bool ShowCloseButton => HasActiveAction;
+
+    public bool ShowBackButton => false;
 
     public string ActiveBreadcrumbText => Stack.BreadcrumbText;
 
@@ -61,7 +71,7 @@ public sealed class GeneratorHostViewModel : ObservableObject
 
     private void OpenAction(GenerationActionDescriptor action)
     {
-        var rootSession = _generatorCatalog.GetDefinition(action.ActionId).CreateRootSession(Stack);
+        var rootSession = _generatorCatalog.GetDefinition(action.ActionId).CreateRootSession();
         Stack.OpenRoot(rootSession);
         _workspaceSessionService.SelectAction(action, rootSession);
         SelectedRootActionChanged?.Invoke(action);
@@ -87,6 +97,11 @@ public sealed class GeneratorHostViewModel : ObservableObject
         OnPropertyChanged(nameof(IsLauncherVisible));
         OnPropertyChanged(nameof(HasParentNode));
         OnPropertyChanged(nameof(HasChildNode));
+        OnPropertyChanged(nameof(IsNestedActive));
+        OnPropertyChanged(nameof(ShowDoneButton));
+        OnPropertyChanged(nameof(ShowCancelButton));
+        OnPropertyChanged(nameof(ShowCloseButton));
+        OnPropertyChanged(nameof(ShowBackButton));
         OnPropertyChanged(nameof(ActiveBreadcrumbText));
         OnPropertyChanged(nameof(ActiveSessionSummary));
         OnPropertyChanged(nameof(ActiveSession));

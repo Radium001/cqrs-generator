@@ -26,13 +26,14 @@ public sealed class DtoGeneratorDefinition : GeneratorDefinition<DtoGeneratorSta
     {
         var planService = services.ServiceProvider.GetRequiredService<IAddDtoPlanService>();
         var scenarioOutlineBuilder = services.ServiceProvider.GetRequiredService<IAddDtoScenarioOutlineBuilder>();
-        return new DtoRootSessionViewModel(
+        var vm = new DtoRootSessionViewModel(
             actionDescriptor: null,
             planService,
-            null!,
             scenarioOutlineBuilder,
             isStandalone: false,
             node: node);
+        vm.SetGenerationSession(session);
+        return vm;
     }
 
     public override GeneratorValidationResult Validate(
@@ -61,10 +62,11 @@ public sealed class DtoGeneratorDefinition : GeneratorDefinition<DtoGeneratorSta
         CoreWorkflowContext core)
     {
         var planService = core.ServiceProvider.GetRequiredService<IAddDtoPlanService>();
+        var feature = state.FeatureRef is null ? null : session.Artifacts.Find(state.FeatureRef);
 
         var formState = new AddDtoFormState(
-            null,
-            null,
+            feature?.Name,
+            feature?.FeaturePath,
             state.BaseName,
             state.Properties
                 .Select(p => new PropertySpec(p.Type, p.Name))

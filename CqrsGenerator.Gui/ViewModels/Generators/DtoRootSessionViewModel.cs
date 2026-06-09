@@ -4,7 +4,6 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using CqrsGenerator.Core.Discovery;
 using CqrsGenerator.Core.Generation;
-using CqrsGenerator.Gui.Collections;
 using CqrsGenerator.Gui.Models;
 using CqrsGenerator.Gui.Services;
 using CqrsGenerator.Gui.Session;
@@ -14,7 +13,7 @@ using CqrsGenerator.Gui.ViewModels;
 namespace CqrsGenerator.Gui.ViewModels.Generators;
 
 public sealed partial class DtoRootSessionViewModel : ObservableObject,
-    IPlanBuildingRootSessionViewModel,
+    IRootGeneratorSessionViewModel,
     IWorkspaceAwareGeneratorSessionViewModel,
     IGeneratorNodeEditorViewModel
 {
@@ -22,11 +21,11 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
 
     private readonly GenerationActionDescriptor? _actionDescriptor;
     private readonly IAddDtoPlanService _planService;
-    private readonly IEmbeddedSessionHost _embeddedSessionHost;
     private readonly IAddDtoScenarioOutlineBuilder _scenarioOutlineBuilder;
     private readonly bool _isStandalone;
     private readonly FeatureItemViewModel? _fixedFeature;
-    private readonly DtoGeneratorState? _sessionState;
+    private DtoGeneratorState? _sessionState;
+    private GenerationSession? _generationSession;
     private ProjectModel? _projectModel;
     private bool _isSyncingFeature;
     private bool _isSyncingDtoName;
@@ -36,7 +35,6 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
     public DtoRootSessionViewModel(
         GenerationActionDescriptor? actionDescriptor,
         IAddDtoPlanService planService,
-        IEmbeddedSessionHost embeddedSessionHost,
         IAddDtoScenarioOutlineBuilder scenarioOutlineBuilder,
         bool isStandalone,
         FeatureItemViewModel? fixedFeature = null,
@@ -44,7 +42,6 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
     {
         _actionDescriptor = actionDescriptor;
         _planService = planService;
-        _embeddedSessionHost = embeddedSessionHost;
         _scenarioOutlineBuilder = scenarioOutlineBuilder;
         _isStandalone = isStandalone;
         _fixedFeature = fixedFeature;
@@ -55,7 +52,7 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
             ? $"root:add-dto:{Guid.NewGuid():N}"
             : $"child:create-dto:{Guid.NewGuid():N}";
 
-        AvailableFeatures = new RuntimeItemCollection<FeatureItemViewModel>(f => f.Name);
+        FeatureItems = [];
         FeaturePicker = new WrappedListPickerViewModel
         {
             AllowCustom = false,
@@ -178,7 +175,13 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
     [ObservableProperty]
     private string _statusText = "Configure DTO.";
 
-    public RuntimeItemCollection<FeatureItemViewModel> AvailableFeatures { get; }
+    public ObservableCollection<FeatureItemViewModel> FeatureItems { get; }
+
+    public void SetGenerationSession(GenerationSession session)
+    {
+        _generationSession = session;
+        _sessionState = Node?.State as DtoGeneratorState;
+    }
 
     public IReadOnlyList<ScenarioNodeViewModel> GetScenarioNodes()
     {
@@ -199,7 +202,9 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
 
     partial void OnSelectedFeatureChanged(FeatureItemViewModel? value)
     {
+        SyncToSessionState();
         OnPropertyChanged(nameof(CanBuildPlan));
+        OnPropertyChanged(nameof(CanComplete));
         OnPropertyChanged(nameof(HasUnsavedChanges));
 
         var items = new List<string> { "(root folder)" };
@@ -219,49 +224,55 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
     private void ReloadProject(ProjectModel? project)
     {
         _projectModel = project;
-        AvailableFeatures.ClearRuntime();
-
-        if (project is null)
+        if (_generationSession is not null)
         {
-            FeaturePicker.Items = AvailableFeatures;
+            _generationSession.Artifacts.SetProjectModel(project);
+        }
+
+        if (project is null || _generationSession is null)
+        {
+            FeatureItems.Clear();
+            FeaturePicker.Items = FeatureItems;
             return;
         }
 
-        AvailableFeatures.SetDiscovered(
-            project.Features.Select(f => new FeatureItemViewModel(f.Name, f.RelativePath)));
+        var selectedFeatureRef = _sessionState?.FeatureRef;
+        var features = _generationSession.Artifacts.GetFeatures()
+            .Select(feature => new FeatureItemViewModel(feature.Ref))
+            .OrderBy(feature => feature.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
-        FeaturePicker.Items = AvailableFeatures;
-
-        if (_fixedFeature is not null)
+        FeatureItems.Clear();
+        foreach (var feature in features)
         {
-            var match = AvailableFeatures.FirstOrDefault(f =>
-                string.Equals(f.Name, _fixedFeature.Name, StringComparison.OrdinalIgnoreCase));
-            if (match is not null)
-            {
-                _isSyncingFeature = true;
-                SelectedFeature = match;
-                FeaturePicker.LockSelection(match);
-                _isSyncingFeature = false;
-            }
-            else
-            {
-                AvailableFeatures.AddRuntime(_fixedFeature);
-                _isSyncingFeature = true;
-                SelectedFeature = _fixedFeature;
-                FeaturePicker.LockSelection(_fixedFeature);
-                _isSyncingFeature = false;
-            }
+            FeatureItems.Add(feature);
+        }
+
+        FeaturePicker.Items = FeatureItems;
+
+        var selected = selectedFeatureRef is not null
+            ? FeatureItems.FirstOrDefault(feature => feature.Ref is not null && ArtifactRefEquals(feature.Ref, selectedFeatureRef))
+            : null;
+
+        if (selected is null && _fixedFeature is not null)
+        {
+            selected = FeatureItems.FirstOrDefault(feature =>
+                string.Equals(feature.RelativePath, _fixedFeature.RelativePath, StringComparison.OrdinalIgnoreCase));
+        }
+
+        selected ??= FeatureItems.FirstOrDefault();
+
+        _isSyncingFeature = true;
+        SelectedFeature = selected;
+        if (_fixedFeature is not null && selected is not null)
+        {
+            FeaturePicker.LockSelection(selected);
         }
         else
         {
-            var match = AvailableFeatures.FirstOrDefault();
-            if (match is not null)
-            {
-                _isSyncingFeature = true;
-                SelectedFeature = match;
-                _isSyncingFeature = false;
-            }
+            FeaturePicker.SelectRawItem(selected);
         }
+        _isSyncingFeature = false;
 
         _isSyncingDtoName = true;
         DtoName = DtoNameCyclic.FullText;
@@ -338,6 +349,7 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
     private void SyncToSessionState()
     {
         if (_sessionState is null) return;
+        _sessionState.FeatureRef = SelectedFeature?.Ref;
         _sessionState.BaseName = DtoNameCyclic.Text.Trim();
         _sessionState.SuffixIndex = DtoNameCyclic.SelectedIndex;
         _sessionState.Properties.Clear();
@@ -366,5 +378,18 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
                 .ToArray(),
             UpdateWebImports,
             subfolder);
+    }
+
+    private static bool ArtifactRefEquals(ArtifactRef left, ArtifactRef right)
+    {
+        if (left.NodeId.HasValue && right.NodeId.HasValue)
+        {
+            return left.NodeId == right.NodeId;
+        }
+
+        return left.Kind == right.Kind
+               && left.Origin == right.Origin
+               && string.Equals(left.Name, right.Name, StringComparison.OrdinalIgnoreCase)
+               && string.Equals(left.FeaturePath, right.FeaturePath, StringComparison.OrdinalIgnoreCase);
     }
 }

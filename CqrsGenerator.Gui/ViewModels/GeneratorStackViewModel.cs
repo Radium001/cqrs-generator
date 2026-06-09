@@ -8,14 +8,15 @@ using System.ComponentModel;
 
 namespace CqrsGenerator.Gui.ViewModels;
 
-public sealed partial class GeneratorStackViewModel : ObservableObject, IEmbeddedSessionHost
+public sealed partial class GeneratorStackViewModel : ObservableObject
 {
     private readonly IWorkspaceStore _workspaceStore;
     private readonly GenerationSession _generationSession;
     private readonly IGenerationSessionNavigator _navigator;
     private readonly GeneratorDefinitionCatalog _definitionCatalog;
     private readonly IServiceProvider _serviceProvider;
-    private readonly Dictionary<Guid, IGeneratorSessionViewModel> _nodeEditors;
+    private readonly GenerationSessionRelationshipService _relationshipService;
+    private readonly Dictionary<Guid, IGeneratorNodeEditorViewModel> _nodeEditors;
     private IRootGeneratorSessionViewModel? _rootSession;
     private IGeneratorSessionViewModel? _activeSession;
     private bool _isSynchronizingWorkspace;
@@ -33,6 +34,8 @@ public sealed partial class GeneratorStackViewModel : ObservableObject, IEmbedde
         _navigator = navigator;
         _definitionCatalog = definitionCatalog;
         _serviceProvider = serviceProvider;
+        _relationshipService = serviceProvider.GetService(typeof(GenerationSessionRelationshipService)) as GenerationSessionRelationshipService
+            ?? new GenerationSessionRelationshipService();
         _nodeEditors = [];
         Breadcrumbs = [];
         SessionBreadcrumbs = [];
@@ -42,8 +45,8 @@ public sealed partial class GeneratorStackViewModel : ObservableObject, IEmbedde
         _generationSession.PropertyChanged += OnSessionPropertyChanged;
 
         CloseRootCommand = new RelayCommand(CloseRoot, () => _rootSession is not null);
-        NavigateToParentCommand = new RelayCommand(NavigateToParent, () => CanNavigateToParent);
-        CompleteChildNodeCommand = new RelayCommand(CompleteChildNode, () => CanCompleteChildNode);
+        DoneNestedCommand = new RelayCommand(DoneNested, () => CanDoneNested);
+        CancelNestedCommand = new RelayCommand(CancelNested, () => CanCancelNested);
     }
 
     public ObservableCollection<GeneratorBreadcrumbItem> Breadcrumbs { get; }
@@ -52,9 +55,9 @@ public sealed partial class GeneratorStackViewModel : ObservableObject, IEmbedde
 
     public IRelayCommand CloseRootCommand { get; }
 
-    public IRelayCommand NavigateToParentCommand { get; }
+    public IRelayCommand DoneNestedCommand { get; }
 
-    public IRelayCommand CompleteChildNodeCommand { get; }
+    public IRelayCommand CancelNestedCommand { get; }
 
     public IGeneratorSessionViewModel? ActiveSession => _activeSession;
 
@@ -72,9 +75,13 @@ public sealed partial class GeneratorStackViewModel : ObservableObject, IEmbedde
 
     public bool HasChildNode => _generationSession.ActiveNode?.ParentId is not null;
 
-    public bool CanCompleteChildNode => _generationSession.ActiveNode?.ParentId is not null;
-
     public bool HasParentNode => _generationSession.ActiveNode?.ParentId is not null;
+
+    public bool IsNestedActive => _generationSession.ActiveNode?.ParentId is not null;
+
+    public bool CanDoneNested => IsNestedActive;
+
+    public bool CanCancelNested => IsNestedActive;
 
     public string ActiveSessionTitle => _activeSession?.DisplayName ?? "Scenario Editor";
 
@@ -88,9 +95,9 @@ public sealed partial class GeneratorStackViewModel : ObservableObject, IEmbedde
 
     public void OpenRoot(IRootGeneratorSessionViewModel rootSession)
     {
+        CloseRootInternal(notify: false);
+
         var previousRootSession = _rootSession;
-        UnsubscribeAllEditors();
-        _nodeEditors.Clear();
         _rootSession = rootSession;
         SubscribeSession(rootSession);
 
@@ -105,19 +112,22 @@ public sealed partial class GeneratorStackViewModel : ObservableObject, IEmbedde
             }
         }
 
-        switch (rootSession)
-        {
-            case AddQueryRootSessionViewModel q: q.SetGenerationSession(_generationSession, _navigator); break;
-            case CommandRootSessionViewModel c: c.SetGenerationSession(_generationSession, _navigator); break;
-            case RepositoryRootSessionViewModel r: r.SetGenerationSession(_generationSession, _navigator); break;
-            case AddWebPageRootSessionViewModel w: w.SetGenerationSession(_generationSession, _navigator); break;
-        }
+        AttachSessionContext(rootSession);
 
         var projectContext = _workspaceStore.State.ProjectContext;
         UpdateWorkspace(rootSession, projectContext);
         _lastProjectContext = projectContext;
-        _activeSession = rootSession;
-        RefreshState();
+
+        if (rootSession is IGeneratorNodeEditorViewModel { Node: not null } rootEditor)
+        {
+            _navigator.OpenNode(rootEditor.Node.Id);
+        }
+        else
+        {
+            _activeSession = rootSession;
+            RefreshState();
+        }
+
         NotifyRootSessionChanged(previousRootSession, _rootSession);
     }
 
@@ -137,61 +147,73 @@ public sealed partial class GeneratorStackViewModel : ObservableObject, IEmbedde
     {
         var node = _navigator.CreateRoot(kind, state);
         _navigator.OpenNode(node.Id);
-        RefreshSessionBreadcrumbs();
-        OnPropertyChanged(nameof(ActiveNode));
-        OnPropertyChanged(nameof(HasActiveNode));
         return node;
     }
 
-    public GeneratorNode OpenChildNode(GeneratorNode parent, GeneratorNodeKind kind, object state)
+    public GeneratorNode OpenChildNode(GeneratorNode parent, GeneratorNodeKind kind, object state, string? relationshipName = null)
     {
-        var node = _navigator.CreateChild(parent, kind, state);
+        var node = _navigator.CreateChild(parent, kind, state, relationshipName);
         _navigator.OpenNode(node.Id);
-        RefreshSessionBreadcrumbs();
-        OnPropertyChanged(nameof(ActiveNode));
-        OnPropertyChanged(nameof(HasActiveNode));
         return node;
     }
 
     public void NavigateToNode(Guid nodeId)
     {
         _navigator.OpenNode(nodeId);
-        RefreshSessionBreadcrumbs();
-        OnPropertyChanged(nameof(ActiveNode));
-        OnPropertyChanged(nameof(HasActiveNode));
     }
 
-    private void NavigateToParent()
+    private void DoneNested()
     {
-        if (!CanNavigateToParent)
+        var child = _generationSession.ActiveNode;
+        if (child?.ParentId is not Guid parentId)
         {
             return;
         }
 
+        var parent = _generationSession.FindNode(parentId);
+        if (parent is null)
+        {
+            return;
+        }
+
+        var validation = _definitionCatalog.GetDefinition(child.Kind).Validate(child, _generationSession);
+        if (!validation.IsValid)
+        {
+            return;
+        }
+
+        if (!_relationshipService.CommitChild(parent, child, _generationSession))
+        {
+            return;
+        }
+
+        child.Lifecycle = GeneratorNodeLifecycle.Committed;
         _navigator.OpenParent();
-        RefreshSessionBreadcrumbs();
-        OnPropertyChanged(nameof(ActiveNode));
-        OnPropertyChanged(nameof(HasActiveNode));
+        RefreshActiveWorkspace();
     }
 
-    private void CompleteChildNode()
+    private void CancelNested()
     {
-        if (!CanCompleteChildNode || ActiveNode is null) return;
+        var child = _generationSession.ActiveNode;
+        if (child?.ParentId is not Guid parentId)
+        {
+            return;
+        }
 
-        try
+        var parent = _generationSession.FindNode(parentId);
+        if (parent is null)
         {
-            var definition = _definitionCatalog.GetDefinition(ActiveNode.Kind);
-            var validation = definition.Validate(ActiveNode, _generationSession);
-            if (validation.IsValid)
-            {
-                ActiveNode.Status = GeneratorNodeStatus.Valid;
-                NavigateToParent();
-            }
+            return;
         }
-        catch
+
+        if (child.Lifecycle == GeneratorNodeLifecycle.Draft)
         {
-            // Validation failed, stay on node
+            RemoveNodeBranch(child);
+            parent.Children.Remove(child);
         }
+
+        _navigator.OpenParent();
+        RefreshActiveWorkspace();
     }
 
     private void OnSessionPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -216,11 +238,7 @@ public sealed partial class GeneratorStackViewModel : ObservableObject, IEmbedde
         if (_rootSession is IGeneratorNodeEditorViewModel rootEditor && rootEditor.Node?.Id == node.Id)
         {
             _activeSession = _rootSession;
-            // Refresh pickers from session artifacts when returning to root
-            if (_rootSession is IWorkspaceAwareGeneratorSessionViewModel workspaceAware)
-            {
-                workspaceAware.UpdateWorkspace(_lastProjectContext);
-            }
+            RefreshActiveWorkspace();
             RefreshState();
             return;
         }
@@ -232,13 +250,14 @@ public sealed partial class GeneratorStackViewModel : ObservableObject, IEmbedde
                 var definition = _definitionCatalog.GetDefinition(node.Kind);
                 var services = new GeneratorSessionServices(_navigator, _serviceProvider);
                 var created = definition.CreateEditor(node, _generationSession, services);
-                if (created is IGeneratorSessionViewModel sessionViewModel)
+                if (created is IGeneratorNodeEditorViewModel sessionViewModel &&
+                    created is IGeneratorSessionViewModel trackedSessionViewModel)
                 {
                     editor = sessionViewModel;
                     _nodeEditors[node.Id] = editor;
-                    SubscribeSession(editor);
+                    SubscribeSession(trackedSessionViewModel);
                     var projectContext = _workspaceStore.State.ProjectContext;
-                    UpdateWorkspace(editor, projectContext);
+                    UpdateWorkspace(trackedSessionViewModel, projectContext);
                 }
             }
             catch
@@ -247,19 +266,36 @@ public sealed partial class GeneratorStackViewModel : ObservableObject, IEmbedde
             }
         }
 
-        _activeSession = editor;
+        _activeSession = editor as IGeneratorSessionViewModel
+            ?? (_rootSession is IGeneratorNodeEditorViewModel activeRootEditor &&
+                _rootSession is IGeneratorSessionViewModel rootEditorSession &&
+                activeRootEditor.Node?.Id == node.Id
+            ? rootEditorSession
+            : null);
+        RefreshActiveWorkspace();
         RefreshState();
     }
 
     private void CloseRoot()
+    {
+        CloseRootInternal(notify: true);
+    }
+
+    private void CloseRootInternal(bool notify)
     {
         var previousRootSession = _rootSession;
         UnsubscribeAllEditors();
         _nodeEditors.Clear();
         _rootSession = null;
         _activeSession = null;
+        _generationSession.Reset();
+        Breadcrumbs.Clear();
+        SessionBreadcrumbs.Clear();
         RefreshState();
-        NotifyRootSessionChanged(previousRootSession, _rootSession);
+        if (notify)
+        {
+            NotifyRootSessionChanged(previousRootSession, _rootSession);
+        }
     }
 
     private void RefreshState()
@@ -298,11 +334,13 @@ public sealed partial class GeneratorStackViewModel : ObservableObject, IEmbedde
         OnPropertyChanged(nameof(HasParentNode));
         OnPropertyChanged(nameof(CanNavigateToParent));
         OnPropertyChanged(nameof(HasChildNode));
-        OnPropertyChanged(nameof(CanCompleteChildNode));
+        OnPropertyChanged(nameof(IsNestedActive));
+        OnPropertyChanged(nameof(CanDoneNested));
+        OnPropertyChanged(nameof(CanCancelNested));
 
         CloseRootCommand.NotifyCanExecuteChanged();
-        NavigateToParentCommand.NotifyCanExecuteChanged();
-        CompleteChildNodeCommand.NotifyCanExecuteChanged();
+        DoneNestedCommand.NotifyCanExecuteChanged();
+        CancelNestedCommand.NotifyCanExecuteChanged();
     }
 
     private void RefreshSessionBreadcrumbs()
@@ -421,6 +459,49 @@ public sealed partial class GeneratorStackViewModel : ObservableObject, IEmbedde
         if (session is IWorkspaceAwareGeneratorSessionViewModel workspaceAwareSession)
         {
             workspaceAwareSession.UpdateWorkspace(workspaceContext);
+        }
+    }
+
+    private void RefreshActiveWorkspace()
+    {
+        if (_activeSession is not null)
+        {
+            UpdateWorkspace(_activeSession, _lastProjectContext);
+        }
+    }
+
+    private void RemoveNodeBranch(GeneratorNode node)
+    {
+        foreach (var child in node.Children.ToList())
+        {
+            RemoveNodeBranch(child);
+        }
+
+        if (_nodeEditors.Remove(node.Id, out var editor) && editor is IGeneratorSessionViewModel trackedEditor)
+        {
+            UnsubscribeSession(trackedEditor);
+        }
+    }
+
+    private void AttachSessionContext(IRootGeneratorSessionViewModel rootSession)
+    {
+        switch (rootSession)
+        {
+            case AddQueryRootSessionViewModel q:
+                q.SetGenerationSession(_generationSession, _navigator);
+                break;
+            case CommandRootSessionViewModel c:
+                c.SetGenerationSession(_generationSession, _navigator);
+                break;
+            case RepositoryRootSessionViewModel r:
+                r.SetGenerationSession(_generationSession, _navigator);
+                break;
+            case AddWebPageRootSessionViewModel w:
+                w.SetGenerationSession(_generationSession, _navigator);
+                break;
+            case DtoRootSessionViewModel dto:
+                dto.SetGenerationSession(_generationSession);
+                break;
         }
     }
 }

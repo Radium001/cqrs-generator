@@ -13,7 +13,7 @@ public interface IWorkspaceSessionService
 
     void RefreshRootSessionState(IRootGeneratorSessionViewModel? rootSession);
 
-    Task BuildPlanAsync(IPlanBuildingRootSessionViewModel? rootSession, CancellationToken cancellationToken);
+    Task BuildPlanAsync(IRootGeneratorSessionViewModel? rootSession, CancellationToken cancellationToken);
 
     Task ApplyPlanAsync(CancellationToken cancellationToken);
 }

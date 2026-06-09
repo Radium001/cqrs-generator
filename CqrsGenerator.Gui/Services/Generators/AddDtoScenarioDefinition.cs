@@ -7,9 +7,9 @@ namespace CqrsGenerator.Gui.Services.Generators;
 
 public sealed class AddDtoScenarioDefinition : IGeneratorScenarioDefinition
 {
-    private readonly Func<IEmbeddedSessionHost, DtoRootSessionViewModel> _factory;
+    private readonly Func<DtoRootSessionViewModel> _factory;
 
-    public AddDtoScenarioDefinition(Func<IEmbeddedSessionHost, DtoRootSessionViewModel> factory)
+    public AddDtoScenarioDefinition(Func<DtoRootSessionViewModel> factory)
     {
         _factory = factory;
         Descriptor = new GenerationActionDescriptor("add-dto", "Add DTO", "Application", "Ready", true);
@@ -19,6 +19,5 @@ public sealed class AddDtoScenarioDefinition : IGeneratorScenarioDefinition
 
     public bool IsAvailable(WorkspaceState state) => true;
 
-    public IRootGeneratorSessionViewModel CreateRootSession(IEmbeddedSessionHost embeddedSessionHost) =>
-        _factory(embeddedSessionHost);
+    public IRootGeneratorSessionViewModel CreateRootSession() => _factory();
 }

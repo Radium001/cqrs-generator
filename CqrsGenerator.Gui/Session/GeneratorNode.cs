@@ -11,11 +11,16 @@ public sealed partial class GeneratorNode : ObservableObject
 
     public GeneratorNodeKind Kind { get; init; }
 
+    public string? RelationshipName { get; init; }
+
     [ObservableProperty]
     private string _title = string.Empty;
 
     [ObservableProperty]
     private GeneratorNodeStatus _status = GeneratorNodeStatus.Draft;
+
+    [ObservableProperty]
+    private GeneratorNodeLifecycle _lifecycle = GeneratorNodeLifecycle.Draft;
 
     public object State { get; set; } = default!;
 

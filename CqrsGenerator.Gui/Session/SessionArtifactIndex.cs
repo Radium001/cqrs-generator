@@ -21,6 +21,43 @@ public sealed class SessionArtifactIndex
         _projectModel = projectModel;
     }
 
+    public ProjectModel? ProjectModel => _projectModel;
+
+    public IReadOnlyList<AvailableArtifactItem> GetFeatures()
+    {
+        var result = new List<AvailableArtifactItem>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (_projectModel is not null)
+        {
+            foreach (var feature in _projectModel.Features)
+            {
+                var reference = new ArtifactRef(
+                    GeneratorNodeKind.Feature,
+                    ArtifactOrigin.Project,
+                    feature.Name,
+                    FeaturePath: feature.RelativePath,
+                    ProjectPath: feature.Path,
+                    DisplayName: feature.Name);
+
+                if (seen.Add(CreateFeatureKey(reference)))
+                {
+                    result.Add(CreateItem(reference));
+                }
+            }
+        }
+
+        foreach (var reference in EnumerateSessionArtifacts(GeneratorNodeKind.Feature))
+        {
+            if (seen.Add(CreateFeatureKey(reference)))
+            {
+                result.Add(CreateItem(reference));
+            }
+        }
+
+        return result;
+    }
+
     public IReadOnlyList<AvailableArtifactItem> GetDtos(string? featurePath = null)
     {
         var result = new List<AvailableArtifactItem>();
@@ -30,37 +67,33 @@ public sealed class SessionArtifactIndex
         {
             foreach (var dto in _projectModel.Dtos)
             {
-                if (featurePath is null ||
-                    string.Equals(dto.FeaturePath, featurePath, StringComparison.OrdinalIgnoreCase))
+                if (!MatchesFeaturePath(dto.FeaturePath, featurePath))
                 {
-                    if (seen.Add(dto.Name))
-                    {
-                        result.Add(new AvailableArtifactItem(
-                            dto.Name,
-                            GeneratorNodeKind.Dto,
-                            null,
-                            false,
-                            true,
-                            dto.FeaturePath));
-                    }
+                    continue;
+                }
+
+                var reference = new ArtifactRef(
+                    GeneratorNodeKind.Dto,
+                    ArtifactOrigin.Project,
+                    dto.Name,
+                    FeaturePath: dto.FeaturePath,
+                    ProjectPath: dto.Path,
+                    Namespace: dto.Namespace,
+                    OwnerName: dto.OwnerQueryName,
+                    DisplayName: string.IsNullOrWhiteSpace(dto.DisplayName) ? dto.Name : dto.DisplayName);
+
+                if (seen.Add(CreateDtoKey(reference)))
+                {
+                    result.Add(CreateItem(reference));
                 }
             }
         }
 
-        foreach (var node in _session.Traverse())
+        foreach (var reference in EnumerateSessionArtifacts(GeneratorNodeKind.Dto).Where(reference => MatchesFeaturePath(reference.FeaturePath, featurePath)))
         {
-            if (node.Kind == GeneratorNodeKind.Dto && node.State is DtoGeneratorState dtoState)
+            if (seen.Add(CreateDtoKey(reference)))
             {
-                var name = GetDtoFullName(dtoState);
-                if (seen.Add(name))
-                {
-                    result.Add(new AvailableArtifactItem(
-                        name,
-                        GeneratorNodeKind.Dto,
-                        node.Id,
-                        true,
-                        false));
-                }
+                result.Add(CreateItem(reference));
             }
         }
 
@@ -76,36 +109,67 @@ public sealed class SessionArtifactIndex
         {
             foreach (var entity in _projectModel.Entities)
             {
-                if (featurePath is null ||
-                    string.Equals(entity.RelativePath, featurePath, StringComparison.OrdinalIgnoreCase))
+                if (!MatchesFeaturePath(entity.RelativePath, featurePath))
                 {
-                    if (seen.Add(entity.Name))
-                    {
-                        result.Add(new AvailableArtifactItem(
-                            entity.Name,
-                            GeneratorNodeKind.Entity,
-                            null,
-                            false,
-                            true,
-                            entity.RelativePath));
-                    }
+                    continue;
+                }
+
+                var reference = new ArtifactRef(
+                    GeneratorNodeKind.Entity,
+                    ArtifactOrigin.Project,
+                    entity.Name,
+                    FeaturePath: entity.RelativePath,
+                    ProjectPath: entity.Path,
+                    Namespace: entity.Namespace,
+                    DisplayName: string.IsNullOrWhiteSpace(entity.DisplayName) ? entity.Name : entity.DisplayName);
+
+                if (seen.Add(CreateEntityKey(reference)))
+                {
+                    result.Add(CreateItem(reference));
                 }
             }
         }
 
-        foreach (var node in _session.Traverse())
+        foreach (var reference in EnumerateSessionArtifacts(GeneratorNodeKind.Entity).Where(reference => MatchesFeaturePath(reference.FeaturePath, featurePath)))
         {
-            if (node.Kind == GeneratorNodeKind.Entity && node.State is EntityGeneratorState entityState)
+            if (seen.Add(CreateEntityKey(reference)))
             {
-                if (seen.Add(entityState.EntityName))
+                result.Add(CreateItem(reference));
+            }
+        }
+
+        return result;
+    }
+
+    public IReadOnlyList<AvailableArtifactItem> GetRepositories(string? featurePath = null)
+    {
+        var result = new List<AvailableArtifactItem>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (_projectModel is not null)
+        {
+            foreach (var repository in _projectModel.Repositories)
+            {
+                var reference = new ArtifactRef(
+                    GeneratorNodeKind.Repository,
+                    ArtifactOrigin.Project,
+                    repository.InterfaceName,
+                    FeaturePath: featurePath,
+                    ProjectPath: repository.Path,
+                    DisplayName: repository.InterfaceName);
+
+                if (seen.Add(CreateRepositoryKey(reference)))
                 {
-                    result.Add(new AvailableArtifactItem(
-                        entityState.EntityName,
-                        GeneratorNodeKind.Entity,
-                        node.Id,
-                        true,
-                        false));
+                    result.Add(CreateItem(reference));
                 }
+            }
+        }
+
+        foreach (var reference in EnumerateSessionArtifacts(GeneratorNodeKind.Repository).Where(reference => MatchesFeaturePath(reference.FeaturePath, featurePath)))
+        {
+            if (seen.Add(CreateRepositoryKey(reference)))
+            {
+                result.Add(CreateItem(reference));
             }
         }
 
@@ -121,138 +185,81 @@ public sealed class SessionArtifactIndex
         {
             foreach (var query in _projectModel.Queries)
             {
-                if (featurePath is null ||
-                    string.Equals(query.FeaturePath, featurePath, StringComparison.OrdinalIgnoreCase))
+                if (!MatchesFeaturePath(query.FeaturePath, featurePath))
                 {
-                    if (seen.Add(query.Name))
-                    {
-                        result.Add(new AvailableArtifactItem(
-                            query.Name,
-                            GeneratorNodeKind.Query,
-                            null,
-                            false,
-                            true,
-                            query.FeaturePath));
-                    }
+                    continue;
+                }
+
+                var reference = new ArtifactRef(
+                    GeneratorNodeKind.Query,
+                    ArtifactOrigin.Project,
+                    query.Name,
+                    FeaturePath: query.FeaturePath,
+                    ProjectPath: query.Path,
+                    Namespace: query.Namespace,
+                    DisplayName: query.Name);
+
+                if (seen.Add(CreateQueryKey(reference)))
+                {
+                    result.Add(CreateItem(reference));
                 }
             }
         }
 
-        foreach (var node in _session.Traverse())
+        foreach (var reference in EnumerateSessionArtifacts(GeneratorNodeKind.Query).Where(reference => MatchesFeaturePath(reference.FeaturePath, featurePath)))
         {
-            if (node.Kind == GeneratorNodeKind.Query && node.State is QueryGeneratorState queryState)
+            if (seen.Add(CreateQueryKey(reference)))
             {
-                if (seen.Add(queryState.QueryName))
-                {
-                    result.Add(new AvailableArtifactItem(
-                        queryState.QueryName,
-                        GeneratorNodeKind.Query,
-                        node.Id,
-                        true,
-                        false,
-                        queryState.FeaturePath));
-                }
+                result.Add(CreateItem(reference));
             }
         }
 
         return result;
     }
 
-    public IReadOnlyList<AvailableArtifactItem> GetRepositories()
+    public AvailableArtifactItem? Find(ArtifactRef artifactRef)
     {
-        var result = new List<AvailableArtifactItem>();
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        if (_projectModel is not null)
+        if (artifactRef.NodeId.HasValue)
         {
-            foreach (var repo in _projectModel.Repositories)
+            var sessionItem = FindByNodeId(artifactRef.NodeId.Value);
+            if (sessionItem is not null)
             {
-                if (seen.Add(repo.InterfaceName))
-                {
-                    result.Add(new AvailableArtifactItem(
-                        repo.InterfaceName,
-                        GeneratorNodeKind.Repository,
-                        null,
-                        false,
-                        true));
-                }
+                return sessionItem;
             }
         }
 
-        foreach (var node in _session.Traverse())
+        if (artifactRef.Origin == ArtifactOrigin.Project)
         {
-            if (node.Kind == GeneratorNodeKind.Repository && node.State is RepositoryGeneratorState repoState)
-            {
-                if (seen.Add(repoState.InterfaceName))
-                {
-                    result.Add(new AvailableArtifactItem(
-                        repoState.InterfaceName,
-                        GeneratorNodeKind.Repository,
-                        node.Id,
-                        true,
-                        false));
-                }
-            }
+            return FindProjectArtifact(artifactRef.Kind, artifactRef.Name, artifactRef.FeaturePath);
         }
 
-        return result;
+        return GetItemsByKind(artifactRef.Kind).FirstOrDefault(item =>
+            string.Equals(item.Name, artifactRef.Name, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(item.FeaturePath, artifactRef.FeaturePath, StringComparison.OrdinalIgnoreCase));
     }
 
-    public IReadOnlyList<AvailableArtifactItem> GetFeatures()
+    public AvailableArtifactItem? FindByNodeId(Guid nodeId)
     {
-        var result = new List<AvailableArtifactItem>();
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        return _session.Traverse()
+            .Select(CreateSessionArtifactRef)
+            .Where(reference => reference is not null)
+            .Select(reference => CreateItem(reference!))
+            .FirstOrDefault(item => item.NodeId == nodeId);
+    }
 
-        if (_projectModel is not null)
-        {
-            foreach (var feature in _projectModel.Features)
-            {
-                if (seen.Add(feature.Name))
-                {
-                    result.Add(new AvailableArtifactItem(
-                        feature.Name,
-                        GeneratorNodeKind.Feature,
-                        null,
-                        false,
-                        true,
-                        feature.RelativePath));
-                }
-            }
-        }
-
-        foreach (var node in _session.Traverse())
-        {
-            if (node.Kind == GeneratorNodeKind.Feature && node.State is FeatureGeneratorState featureState)
-            {
-                if (seen.Add(featureState.FeatureName))
-                {
-                    result.Add(new AvailableArtifactItem(
-                        featureState.FeatureName,
-                        GeneratorNodeKind.Feature,
-                        node.Id,
-                        true,
-                        false));
-                }
-            }
-        }
-
-        return result;
+    public AvailableArtifactItem? FindProjectArtifact(GeneratorNodeKind kind, string name, string? featurePath = null)
+    {
+        return GetItemsByKind(kind)
+            .FirstOrDefault(item =>
+                item.IsFromProject &&
+                string.Equals(item.Name, name, StringComparison.OrdinalIgnoreCase) &&
+                (featurePath is null || string.Equals(item.FeaturePath, featurePath, StringComparison.OrdinalIgnoreCase)));
     }
 
     public AvailableArtifactItem? FindByName(string name, GeneratorNodeKind kind)
     {
-        var items = kind switch
-        {
-            GeneratorNodeKind.Dto => GetDtos(),
-            GeneratorNodeKind.Entity => GetEntities(),
-            GeneratorNodeKind.Query => GetQueries(),
-            GeneratorNodeKind.Repository => GetRepositories(),
-            GeneratorNodeKind.Feature => GetFeatures(),
-            _ => [],
-        };
-
-        return items.FirstOrDefault(x =>
-            string.Equals(x.Name, name, StringComparison.OrdinalIgnoreCase));
+        return GetItemsByKind(kind).FirstOrDefault(item =>
+            string.Equals(item.Name, name, StringComparison.OrdinalIgnoreCase));
     }
 
     public bool IsFromSession(string name, GeneratorNodeKind kind)
@@ -273,6 +280,157 @@ public sealed class SessionArtifactIndex
     public void ClearProjectModel()
     {
         _projectModel = null;
+    }
+
+    private IReadOnlyList<AvailableArtifactItem> GetItemsByKind(GeneratorNodeKind kind)
+    {
+        return kind switch
+        {
+            GeneratorNodeKind.Feature => GetFeatures(),
+            GeneratorNodeKind.Dto => GetDtos(),
+            GeneratorNodeKind.Entity => GetEntities(),
+            GeneratorNodeKind.Repository => GetRepositories(),
+            GeneratorNodeKind.Query => GetQueries(),
+            _ => [],
+        };
+    }
+
+    private IEnumerable<ArtifactRef> EnumerateSessionArtifacts(GeneratorNodeKind kind)
+    {
+        return _session.Traverse()
+            .Where(node => node.Kind == kind)
+            .Select(CreateSessionArtifactRef)
+            .Where(reference => reference is not null)!
+            .Cast<ArtifactRef>();
+    }
+
+    private static AvailableArtifactItem CreateItem(ArtifactRef reference)
+    {
+        return new AvailableArtifactItem(
+            reference,
+            reference.DisplayName ?? reference.Name,
+            reference.FeaturePath);
+    }
+
+    private static bool MatchesFeaturePath(string? itemFeaturePath, string? requestedFeaturePath)
+    {
+        return requestedFeaturePath is null ||
+               string.Equals(itemFeaturePath, requestedFeaturePath, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string CreateFeatureKey(ArtifactRef reference)
+    {
+        return (reference.FeaturePath ?? reference.Name).ToUpperInvariant();
+    }
+
+    private static string CreateDtoKey(ArtifactRef reference)
+    {
+        return reference.Name.ToUpperInvariant();
+    }
+
+    private static string CreateEntityKey(ArtifactRef reference)
+    {
+        return $"{reference.Name}|{reference.Namespace}|{reference.ProjectPath}|{reference.FeaturePath}".ToUpperInvariant();
+    }
+
+    private static string CreateRepositoryKey(ArtifactRef reference)
+    {
+        return $"{reference.Name}|{reference.FeaturePath}|{reference.ProjectPath}".ToUpperInvariant();
+    }
+
+    private static string CreateQueryKey(ArtifactRef reference)
+    {
+        return $"{reference.Name}|{reference.FeaturePath}".ToUpperInvariant();
+    }
+
+    private ArtifactRef? CreateSessionArtifactRef(GeneratorNode node)
+    {
+        return node.Kind switch
+        {
+            GeneratorNodeKind.Feature when node.State is FeatureGeneratorState featureState =>
+                new ArtifactRef(
+                    GeneratorNodeKind.Feature,
+                    ArtifactOrigin.Session,
+                    featureState.FeatureName,
+                    node.Id,
+                    FeaturePath: featureState.FeatureName,
+                    DisplayName: featureState.FeatureName),
+
+            GeneratorNodeKind.Dto when node.State is DtoGeneratorState dtoState =>
+                new ArtifactRef(
+                    GeneratorNodeKind.Dto,
+                    ArtifactOrigin.Session,
+                    GetDtoFullName(dtoState),
+                    node.Id,
+                    FeaturePath: ResolveFeaturePath(node, current => (current.State as DtoGeneratorState)?.FeaturePath),
+                    DisplayName: GetDtoFullName(dtoState)),
+
+            GeneratorNodeKind.Entity when node.State is EntityGeneratorState entityState =>
+                new ArtifactRef(
+                    GeneratorNodeKind.Entity,
+                    ArtifactOrigin.Session,
+                    entityState.EntityName,
+                    node.Id,
+                    FeaturePath: ResolveFeaturePath(node, _ => null),
+                    DisplayName: entityState.EntityName),
+
+            GeneratorNodeKind.Repository when node.State is RepositoryGeneratorState repositoryState =>
+                new ArtifactRef(
+                    GeneratorNodeKind.Repository,
+                    ArtifactOrigin.Session,
+                    repositoryState.InterfaceName,
+                    node.Id,
+                    repositoryState.FeatureRef?.FeaturePath,
+                    DisplayName: repositoryState.InterfaceName),
+
+            GeneratorNodeKind.Query when node.State is QueryGeneratorState queryState =>
+                new ArtifactRef(
+                    GeneratorNodeKind.Query,
+                    ArtifactOrigin.Session,
+                    queryState.QueryName,
+                    node.Id,
+                    queryState.FeatureRef?.FeaturePath,
+                    DisplayName: queryState.QueryName),
+
+            _ => null,
+        };
+    }
+
+    private string? ResolveFeaturePath(GeneratorNode node, Func<GeneratorNode, string?> currentResolver)
+    {
+        var current = currentResolver(node);
+        if (!string.IsNullOrWhiteSpace(current))
+        {
+            return current;
+        }
+
+        if (node.ParentId is null)
+        {
+            return null;
+        }
+
+        var parent = _session.FindNode(node.ParentId.Value);
+        if (parent?.State is QueryGeneratorState queryState)
+        {
+            return queryState.FeatureRef?.FeaturePath;
+        }
+
+        if (parent?.State is RepositoryGeneratorState repositoryState)
+        {
+            return repositoryState.FeatureRef?.FeaturePath;
+        }
+
+        if (parent?.State is CommandGeneratorState commandState)
+        {
+            return commandState.FeatureRef?.FeaturePath;
+        }
+
+        if (parent?.State is WebPageGeneratorState webPageState)
+        {
+            return webPageState.FeatureRef?.FeaturePath;
+        }
+
+        return null;
     }
 
     private static string GetDtoFullName(DtoGeneratorState state)

@@ -1,5 +1,8 @@
 using CqrsGenerator.Core.Discovery;
 using CqrsGenerator.Core.Generation;
+using CqrsGenerator.Core.Workflows;
+using CqrsGenerator.Gui.Models;
+using CqrsGenerator.Gui.Services;
 using CqrsGenerator.Gui.Session;
 using CqrsGenerator.Gui.Session.Definitions;
 using CqrsGenerator.Gui.Session.States;
@@ -125,8 +128,9 @@ public sealed class SessionGraphPhase10Tests
         var (session, navigator) = CreateSessionAndNavigator();
         var node = navigator.CreateRoot(GeneratorNodeKind.Dto, new DtoGeneratorState());
 
-        navigator.OpenNode(node.Id);
+        var opened = navigator.OpenNode(node.Id);
 
+        Assert.True(opened);
         Assert.Equal(node, session.ActiveNode);
     }
 
@@ -217,6 +221,70 @@ public sealed class SessionGraphPhase10Tests
     }
 
     [Fact]
+    public void QueryGeneratorDefinition_BuildPlan_RecomputesQueryServiceSuggestion()
+    {
+        var (session, navigator) = CreateSessionAndNavigator();
+        var projectModel = CreateProjectModel();
+        session.Artifacts.SetProjectModel(projectModel);
+
+        var node = navigator.CreateRoot(GeneratorNodeKind.Query, new QueryGeneratorState
+        {
+            QueryName = "GetUsers",
+            FeatureRef = new ArtifactRef(GeneratorNodeKind.Feature, ArtifactOrigin.Project, "Users", FeaturePath: "Users"),
+            ExistingResultDtoName = "UserDto",
+            CreateQueryServiceMethod = true,
+            MethodName = "GetUsersAsync",
+        });
+
+        var definition = new QueryGeneratorDefinition();
+        var serviceProvider = new QueryDefinitionServiceProvider(new CapturingAddQueryPlanService(), new QueryServiceSuggestionService());
+        var targetRootPath = Path.GetTempPath();
+        var plan = definition.BuildPlan(
+            node,
+            (QueryGeneratorState)node.State,
+            session,
+            new CoreWorkflowContext(
+                new ProjectWorkspaceContext(targetRootPath, CqrsGenerator.Core.Configuration.GeneratorConfig.ForTargetRoot(targetRootPath), projectModel),
+                null!,
+                null!,
+                serviceProvider));
+
+        Assert.NotNull(plan);
+        Assert.NotNull(serviceProvider.PlanService.LastFormState);
+        Assert.NotNull(serviceProvider.PlanService.LastFormState!.QueryService);
+        Assert.Equal(QueryServiceSuggestionMode.CreateNew, serviceProvider.PlanService.LastFormState.QueryService!.Mode);
+    }
+
+    [Fact]
+    public void QueryGeneratorDefinition_Validate_Fails_WhenQueryServiceSuggestionIsBlocked()
+    {
+        var (session, navigator) = CreateSessionAndNavigator();
+        var projectModel = new ProjectModel
+        {
+            Paths = new ProjectPaths("", "", "", "", "", "", "", "", ""),
+            Features = [new FeatureInfo("Users", "Users", "")],
+            Dtos = [new DtoInfo("UserDto", "Users", "", "", "")],
+            QueryServices = [new QueryServiceInfo("IUsersQueryService", "Users", "iface.cs", null, null, QueryServiceImplementationPlacement.Missing, 0)],
+            DependencyInjection = new DependencyInjectionInfo("", []),
+        };
+        session.Artifacts.SetProjectModel(projectModel);
+
+        var node = navigator.CreateRoot(GeneratorNodeKind.Query, new QueryGeneratorState
+        {
+            QueryName = "GetUsers",
+            FeatureRef = new ArtifactRef(GeneratorNodeKind.Feature, ArtifactOrigin.Project, "Users", FeaturePath: "Users"),
+            ExistingResultDtoName = "UserDto",
+            CreateQueryServiceMethod = true,
+            MethodName = "GetUsersAsync",
+        });
+
+        var validation = new QueryGeneratorDefinition().Validate(node, (QueryGeneratorState)node.State, session);
+
+        Assert.False(validation.IsValid);
+        Assert.Contains("could not be resolved automatically", validation.Errors.Single(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void ArtifactIndex_NoDuplicatesWhenProjectAndSessionHaveSameName()
     {
         var (session, navigator) = CreateSessionAndNavigator();
@@ -230,17 +298,24 @@ public sealed class SessionGraphPhase10Tests
     }
 
     [Fact]
-    public void ArtifactIndex_FindByName_WorksForEachKind()
+    public void ArtifactIndex_FindByReference_WorksForProjectArtifacts()
     {
-        var (session, navigator) = CreateSessionAndNavigator();
+        var (session, _) = CreateSessionAndNavigator();
         session.Artifacts.SetProjectModel(CreateProjectModel());
 
-        var found = session.Artifacts.FindByName("UserDto", GeneratorNodeKind.Dto);
+        var found = session.Artifacts.Find(new ArtifactRef(
+            GeneratorNodeKind.Dto,
+            ArtifactOrigin.Project,
+            "UserDto",
+            FeaturePath: "Users"));
 
         Assert.NotNull(found);
         Assert.Equal("UserDto", found.Name);
 
-        var notFound = session.Artifacts.FindByName("NonExistent", GeneratorNodeKind.Dto);
+        var notFound = session.Artifacts.Find(new ArtifactRef(
+            GeneratorNodeKind.Dto,
+            ArtifactOrigin.Project,
+            "NonExistent"));
         Assert.Null(notFound);
     }
 
@@ -268,13 +343,17 @@ public sealed class SessionGraphPhase10Tests
     {
         var (session, navigator) = CreateSessionAndNavigator();
         var dtoNode = navigator.CreateRoot(GeneratorNodeKind.Dto, new DtoGeneratorState { BaseName = "UserDto" });
-        var queryState = new QueryGeneratorState { QueryName = "GetUsers", ResultDtoNodeId = dtoNode.Id };
+        var queryState = new QueryGeneratorState
+        {
+            QueryName = "GetUsers",
+            ResultDtoRef = new ArtifactRef(GeneratorNodeKind.Dto, ArtifactOrigin.Session, "UserDto", dtoNode.Id),
+        };
         navigator.CreateRoot(GeneratorNodeKind.Query, queryState);
 
         var usages = navigator.FindUsages(dtoNode.Id);
 
         Assert.Single(usages);
-        Assert.Equal(nameof(QueryGeneratorState.ResultDtoNodeId), usages[0].PropertyName);
+        Assert.Equal(nameof(QueryGeneratorState.ResultDtoRef), usages[0].PropertyName);
     }
 
     [Fact]
@@ -282,13 +361,17 @@ public sealed class SessionGraphPhase10Tests
     {
         var (session, navigator) = CreateSessionAndNavigator();
         var entityNode = navigator.CreateRoot(GeneratorNodeKind.Entity, new EntityGeneratorState { EntityName = "User" });
-        var repoState = new RepositoryGeneratorState { InterfaceName = "IUserRepository", EntityNodeId = entityNode.Id };
+        var repoState = new RepositoryGeneratorState
+        {
+            InterfaceName = "IUserRepository",
+            EntityRef = new ArtifactRef(GeneratorNodeKind.Entity, ArtifactOrigin.Session, "User", entityNode.Id),
+        };
         navigator.CreateRoot(GeneratorNodeKind.Repository, repoState);
 
         var usages = navigator.FindUsages(entityNode.Id);
 
         Assert.Single(usages);
-        Assert.Equal(nameof(RepositoryGeneratorState.EntityNodeId), usages[0].PropertyName);
+        Assert.Equal(nameof(RepositoryGeneratorState.EntityRef), usages[0].PropertyName);
     }
 
     [Fact]
@@ -297,13 +380,13 @@ public sealed class SessionGraphPhase10Tests
         var (session, navigator) = CreateSessionAndNavigator();
         var repoNode = navigator.CreateRoot(GeneratorNodeKind.Repository, new RepositoryGeneratorState { InterfaceName = "IUserRepository" });
         var cmdState = new CommandGeneratorState { CommandName = "CreateUser" };
-        cmdState.RepositoryNodeIds.Add(repoNode.Id);
+        cmdState.RepositoryRefs.Add(new ArtifactRef(GeneratorNodeKind.Repository, ArtifactOrigin.Session, "IUserRepository", repoNode.Id));
         navigator.CreateRoot(GeneratorNodeKind.Command, cmdState);
 
         var usages = navigator.FindUsages(repoNode.Id);
 
         Assert.Single(usages);
-        Assert.Equal(nameof(CommandGeneratorState.RepositoryNodeIds), usages[0].PropertyName);
+        Assert.Equal(nameof(CommandGeneratorState.RepositoryRefs), usages[0].PropertyName);
     }
 
     [Fact]
@@ -322,7 +405,11 @@ public sealed class SessionGraphPhase10Tests
     {
         var (session, navigator) = CreateSessionAndNavigator();
         var dtoNode = navigator.CreateRoot(GeneratorNodeKind.Dto, new DtoGeneratorState { BaseName = "UserDto" });
-        var queryState = new QueryGeneratorState { QueryName = "GetUsers", ResultDtoNodeId = dtoNode.Id };
+        var queryState = new QueryGeneratorState
+        {
+            QueryName = "GetUsers",
+            ResultDtoRef = new ArtifactRef(GeneratorNodeKind.Dto, ArtifactOrigin.Session, "UserDto", dtoNode.Id),
+        };
         navigator.CreateRoot(GeneratorNodeKind.Query, queryState);
 
         var removed = navigator.RemoveNode(dtoNode.Id);
@@ -331,11 +418,15 @@ public sealed class SessionGraphPhase10Tests
     }
 
     [Fact]
-    public void DefinitionValidation_DetectsDanglingResultDtoNodeId()
+    public void DefinitionValidation_DetectsDanglingResultDtoRef()
     {
         var catalog = new GeneratorDefinitionCatalog(CreateTestDefinitions());
         var (session, navigator) = CreateSessionAndNavigator();
-        var queryState = new QueryGeneratorState { QueryName = "GetUsers", ResultDtoNodeId = Guid.NewGuid() };
+        var queryState = new QueryGeneratorState
+        {
+            QueryName = "GetUsers",
+            ResultDtoRef = new ArtifactRef(GeneratorNodeKind.Dto, ArtifactOrigin.Session, "MissingDto", Guid.NewGuid()),
+        };
         var node = navigator.CreateRoot(GeneratorNodeKind.Query, queryState);
         var definition = catalog.GetDefinition(GeneratorNodeKind.Query);
 
@@ -346,11 +437,15 @@ public sealed class SessionGraphPhase10Tests
     }
 
     [Fact]
-    public void DefinitionValidation_DetectsDanglingEntityNodeId()
+    public void DefinitionValidation_DetectsDanglingEntityRef()
     {
         var catalog = new GeneratorDefinitionCatalog(CreateTestDefinitions());
         var (session, navigator) = CreateSessionAndNavigator();
-        var repoState = new RepositoryGeneratorState { InterfaceName = "IUserRepository", EntityNodeId = Guid.NewGuid() };
+        var repoState = new RepositoryGeneratorState
+        {
+            InterfaceName = "IUserRepository",
+            EntityRef = new ArtifactRef(GeneratorNodeKind.Entity, ArtifactOrigin.Session, "MissingEntity", Guid.NewGuid()),
+        };
         var node = navigator.CreateRoot(GeneratorNodeKind.Repository, repoState);
         var definition = catalog.GetDefinition(GeneratorNodeKind.Repository);
 
@@ -361,12 +456,12 @@ public sealed class SessionGraphPhase10Tests
     }
 
     [Fact]
-    public void DefinitionValidation_DetectsDanglingRepositoryNodeIds()
+    public void DefinitionValidation_DetectsDanglingRepositoryRefs()
     {
         var catalog = new GeneratorDefinitionCatalog(CreateTestDefinitions());
         var (session, navigator) = CreateSessionAndNavigator();
         var cmdState = new CommandGeneratorState { CommandName = "CreateUser" };
-        cmdState.RepositoryNodeIds.Add(Guid.NewGuid());
+        cmdState.RepositoryRefs.Add(new ArtifactRef(GeneratorNodeKind.Repository, ArtifactOrigin.Session, "MissingRepository", Guid.NewGuid()));
         var node = navigator.CreateRoot(GeneratorNodeKind.Command, cmdState);
         var definition = catalog.GetDefinition(GeneratorNodeKind.Command);
 
@@ -391,6 +486,28 @@ public sealed class SessionGraphPhase10Tests
         var plan = builder.BuildPlan(session, new CoreWorkflowContext(null!, null!, null!, new StubServiceProvider()));
 
         Assert.NotNull(plan);
+    }
+
+    [Fact]
+    public void ValidationService_UpdatesNodeStatuses_FromDefinitionResults()
+    {
+        var catalog = new GeneratorDefinitionCatalog(CreateTestDefinitions());
+        var validationService = new GenerationSessionValidationService(catalog);
+        var (session, navigator) = CreateSessionAndNavigator();
+        var validNode = navigator.CreateRoot(GeneratorNodeKind.Entity, new EntityGeneratorState { EntityName = "User" });
+        var invalidNode = navigator.CreateRoot(
+            GeneratorNodeKind.Query,
+            new QueryGeneratorState
+            {
+                QueryName = "GetUsers",
+                ResultDtoRef = new ArtifactRef(GeneratorNodeKind.Dto, ArtifactOrigin.Session, "MissingDto", Guid.NewGuid()),
+            });
+
+        var result = validationService.Validate(session);
+
+        Assert.False(result.IsValid);
+        Assert.Equal(GeneratorNodeStatus.Valid, validNode.Status);
+        Assert.Equal(GeneratorNodeStatus.Invalid, invalidNode.Status);
     }
 
     private static IReadOnlyList<IGeneratorDefinition> CreateTestDefinitions()
@@ -433,8 +550,9 @@ public sealed class SessionGraphPhase10Tests
 
             if (state is CommandGeneratorState cmdState)
             {
-                var dangling = cmdState.RepositoryNodeIds
-                    .Select(id => session.FindNode(id))
+                var dangling = cmdState.RepositoryRefs
+                    .Where(reference => reference.NodeId.HasValue)
+                    .Select(reference => session.FindNode(reference.NodeId!.Value))
                     .Where(n => n is null)
                     .Count();
                 if (dangling > 0)
@@ -442,12 +560,14 @@ public sealed class SessionGraphPhase10Tests
             }
             else if (state is RepositoryGeneratorState repoState)
             {
-                if (repoState.EntityNodeId.HasValue && session.FindNode(repoState.EntityNodeId.Value) is null)
+                if (repoState.EntityRef?.NodeId.HasValue == true &&
+                    session.FindNode(repoState.EntityRef.NodeId.Value) is null)
                     errors.Add("Dangling entity reference");
             }
             else if (state is QueryGeneratorState queryState)
             {
-                if (queryState.ResultDtoNodeId.HasValue && session.FindNode(queryState.ResultDtoNodeId.Value) is null)
+                if (queryState.ResultDtoRef?.NodeId.HasValue == true &&
+                    session.FindNode(queryState.ResultDtoRef.NodeId.Value) is null)
                     errors.Add("Dangling result DTO reference");
             }
 
@@ -466,5 +586,44 @@ public sealed class SessionGraphPhase10Tests
     private sealed class StubServiceProvider : IServiceProvider
     {
         public object? GetService(Type serviceType) => null;
+    }
+
+    private sealed class QueryDefinitionServiceProvider : IServiceProvider
+    {
+        public QueryDefinitionServiceProvider(CapturingAddQueryPlanService planService, IQueryServiceSuggestionService suggestionService)
+        {
+            PlanService = planService;
+            SuggestionService = suggestionService;
+        }
+
+        public CapturingAddQueryPlanService PlanService { get; }
+
+        public IQueryServiceSuggestionService SuggestionService { get; }
+
+        public object? GetService(Type serviceType)
+        {
+            if (serviceType == typeof(IAddQueryPlanService))
+            {
+                return PlanService;
+            }
+
+            if (serviceType == typeof(IQueryServiceSuggestionService))
+            {
+                return SuggestionService;
+            }
+
+            return null;
+        }
+    }
+
+    private sealed class CapturingAddQueryPlanService : IAddQueryPlanService
+    {
+        public AddQueryFormState? LastFormState { get; private set; }
+
+        public GenerationPlan BuildPlan(ProjectWorkspaceContext context, AddQueryFormState formState)
+        {
+            LastFormState = formState;
+            return new GenerationPlan();
+        }
     }
 }

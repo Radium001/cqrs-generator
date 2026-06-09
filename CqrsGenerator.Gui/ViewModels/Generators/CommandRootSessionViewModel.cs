@@ -3,7 +3,6 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using CqrsGenerator.Core.Discovery;
 using CqrsGenerator.Core.Generation;
-using CqrsGenerator.Gui.Collections;
 using CqrsGenerator.Gui.Models;
 using CqrsGenerator.Gui.Services;
 using CqrsGenerator.Gui.Session;
@@ -12,7 +11,7 @@ using CqrsGenerator.Gui.Session.States;
 namespace CqrsGenerator.Gui.ViewModels.Generators;
 
 public sealed partial class CommandRootSessionViewModel : ObservableObject,
-    IPlanBuildingRootSessionViewModel,
+    IRootGeneratorSessionViewModel,
     IWorkspaceAwareGeneratorSessionViewModel,
     IGeneratorNodeEditorViewModel
 {
@@ -21,7 +20,8 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject,
     private ProjectModel? _projectModel;
     private bool _isSyncingFeature;
     private bool _isSyncingCommandName;
-    private readonly CommandGeneratorState? _sessionState;
+    private bool _isSyncingRepositorySelection;
+    private CommandGeneratorState? _sessionState;
     private GenerationSession? _generationSession;
     private IGenerationSessionNavigator? _navigator;
 
@@ -30,7 +30,6 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject,
 
     public CommandRootSessionViewModel(
         GenerationActionDescriptor actionDescriptor,
-        IEmbeddedSessionHost embeddedSessionHost,
         IAddCommandPlanService planService,
         IAddCommandScenarioOutlineBuilder scenarioOutlineBuilder,
         IAddRepositoryPlanService repositoryPlanService,
@@ -48,7 +47,7 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject,
         SessionId = $"root:{actionDescriptor.ActionId}";
         AvailableFeatures = [];
         Parameters = [];
-        ResultTypeItems = new RuntimeItemCollection<DtoItemViewModel>(dto => dto.Name);
+        ResultTypeItems = [];
 
         FeaturePicker = new WrappedListPickerViewModel();
         FeaturePicker.PropertyChanged += OnFeaturePickerChanged;
@@ -91,8 +90,34 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject,
         DependencyPicker = new DependencyPickerViewModel();
         DependencyPicker.Picker.SelectionChanged += () =>
         {
+            if (_isSyncingRepositorySelection)
+            {
+                return;
+            }
+
+            SyncSelectedRepositoriesToState();
             OnPropertyChanged(nameof(HasUnsavedChanges));
             OnPropertyChanged(nameof(CanBuildPlan));
+        };
+        DependencyPicker.EditRequested = option =>
+        {
+            if (option.NodeId is Guid nodeId)
+            {
+                _navigator?.OpenNode(nodeId);
+            }
+        };
+        DependencyPicker.RemoveRequested = option =>
+        {
+            if (option.NodeId is not Guid nodeId || _navigator is null)
+            {
+                return;
+            }
+
+            if (_navigator.RemoveNode(nodeId))
+            {
+                _sessionState?.RepositoryRefs.Remove(_sessionState.RepositoryRefs.FirstOrDefault(r => r.NodeId == nodeId)!);
+                RefreshRepositoryChoices();
+            }
         };
 
         if (_sessionState is not null)
@@ -118,6 +143,11 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject,
         {
             var state = new CommandGeneratorState { CommandName = "Create" };
             _node = navigator.CreateRoot(GeneratorNodeKind.Command, state);
+            _sessionState = state;
+        }
+        else if (_node.State is CommandGeneratorState existingState)
+        {
+            _sessionState = existingState;
         }
         DependencyPicker.CreateRepositoryCommand = new RelayCommand(OpenCreateRepository, () => Node is not null);
         DependencyPicker.HasCreateRepository = true;
@@ -160,7 +190,7 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject,
 
     public ObservableCollection<FeatureItemViewModel> AvailableFeatures { get; }
 
-    public RuntimeItemCollection<DtoItemViewModel> ResultTypeItems { get; }
+    public ObservableCollection<DtoItemViewModel> ResultTypeItems { get; }
 
     public ObservableCollection<PropertyEntryViewModel> Parameters { get; }
 
@@ -202,21 +232,26 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject,
 
     partial void OnSelectedFeatureChanged(FeatureItemViewModel? value)
     {
+        if (_isSyncingFeature)
+        {
+            OnPropertyChanged(nameof(CanBuildPlan));
+            OnPropertyChanged(nameof(HasUnsavedChanges));
+            return;
+        }
+
+        SyncToSessionState();
         OnPropertyChanged(nameof(CanBuildPlan));
         OnPropertyChanged(nameof(HasUnsavedChanges));
 
-        if (!_isSyncingFeature)
-        {
-            _isSyncingFeature = true;
-            FeaturePicker.SelectRawItem(value);
-            _isSyncingFeature = false;
-        }
+        _isSyncingFeature = true;
+        FeaturePicker.SelectRawItem(value);
+        _isSyncingFeature = false;
 
         if (_projectModel is null || value is null)
         {
-            ResultTypeItems.SetDiscovered([]);
+            ResultTypeItems.Clear();
             ResultTypePicker.RawItems = ResultTypeItems;
-            DependencyPicker.SetDiscovered(Array.Empty<RepositoryInfo>());
+            DependencyPicker.SetDiscovered(Array.Empty<AvailableArtifactItem>());
             return;
         }
 
@@ -228,19 +263,22 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject,
 
         if (_generationSession is not null)
         {
-            var sessionDtos = _generationSession.Artifacts.GetDtos(value.RelativePath);
-            foreach (var sessionDto in sessionDtos)
+            foreach (var sessionDto in _generationSession.Artifacts.GetDtos(value.RelativePath))
             {
                 if (!discoveredDtos.Any(d => d.Name == sessionDto.Name))
                 {
-                    discoveredDtos.Add(new DtoItemViewModel(sessionDto.Name, sessionDto.Name, string.Empty));
+                    discoveredDtos.Add(new DtoItemViewModel(sessionDto.Name, sessionDto.DisplayName, sessionDto.Ref.Namespace ?? string.Empty));
                 }
             }
         }
 
-        ResultTypeItems.SetDiscovered(discoveredDtos);
+        ResultTypeItems.Clear();
+        foreach (var dto in discoveredDtos)
+        {
+            ResultTypeItems.Add(dto);
+        }
         ResultTypePicker.RawItems = ResultTypeItems;
-        DependencyPicker.SetDiscovered(_projectModel.Repositories);
+        RefreshRepositoryChoices();
     }
 
     partial void OnCommandNameChanged(string value)
@@ -268,8 +306,7 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject,
     private void ReloadProject(ProjectModel? project)
     {
         _projectModel = project;
-        var previousFeaturePath = SelectedFeature?.RelativePath;
-        DependencyPicker.Picker.ClearRuntime();
+        var previousFeatureRef = _sessionState?.FeatureRef;
 
         AvailableFeatures.Clear();
         OnPropertyChanged(nameof(CanBuildPlan));
@@ -282,10 +319,7 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject,
             return;
         }
 
-        var features = project.Features
-            .OrderBy(feature => feature.Name, StringComparer.OrdinalIgnoreCase)
-            .Select(feature => new FeatureItemViewModel(feature.Name, feature.RelativePath))
-            .ToList();
+        var features = BuildFeatureItems(project);
 
         foreach (var feature in features)
         {
@@ -295,7 +329,9 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject,
         FeaturePicker.Items = features;
 
         var match = features.FirstOrDefault(feature =>
-            string.Equals(feature.RelativePath, previousFeaturePath, StringComparison.OrdinalIgnoreCase))
+            previousFeatureRef is not null &&
+            feature.Ref is not null &&
+            ArtifactRefEquals(feature.Ref, previousFeatureRef))
             ?? features.FirstOrDefault();
 
         _isSyncingFeature = true;
@@ -307,7 +343,7 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject,
         CommandName = CommandNameCyclic.FullText;
         _isSyncingCommandName = false;
 
-        DependencyPicker.SetDiscovered(project.Repositories);
+        RefreshRepositoryChoices();
 
         StatusText = AvailableFeatures.Count == 0
             ? "No features discovered."
@@ -355,10 +391,8 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject,
         {
             _sessionState.Parameters.Add(new PropertySpec(p.Type.Trim(), p.Name.Trim()));
         }
-        if (SelectedFeature is not null)
-        {
-            _sessionState.FeaturePath = SelectedFeature.RelativePath;
-        }
+        _sessionState.FeatureRef = SelectedFeature?.Ref;
+        SyncSelectedRepositoriesToState();
     }
 
     private AddCommandFormState CreateFormState()
@@ -403,9 +437,113 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject,
 
     private void OpenCreateRepository()
     {
-        if (Node is null || _navigator is null) return;
+        if (Node is null || _navigator is null || _generationSession is null) return;
         var state = new RepositoryGeneratorState { InterfaceName = "IRepository" };
-        var child = _navigator.CreateChild(Node, GeneratorNodeKind.Repository, state);
+        if (SelectedFeature?.Ref is not null)
+        {
+            state.FeatureRef = SelectedFeature.Ref;
+        }
+        var child = _navigator.CreateChild(Node, GeneratorNodeKind.Repository, state, "Repository");
         _navigator.OpenNode(child.Id);
+    }
+
+    private void RefreshRepositoryChoices()
+    {
+        if (_projectModel is null || SelectedFeature is null)
+        {
+            DependencyPicker.SetDiscovered(Array.Empty<AvailableArtifactItem>());
+            return;
+        }
+
+        var featurePath = SelectedFeature.RelativePath;
+        var selectedReferences = (_sessionState?.RepositoryRefs ?? []).ToList();
+        _isSyncingRepositorySelection = true;
+        try
+        {
+            if (_generationSession is not null)
+            {
+                var artifacts = _generationSession.Artifacts.GetRepositories(featurePath);
+                DependencyPicker.SetDiscovered(artifacts);
+                DependencyPicker.SetSelectedDependencies(selectedReferences);
+            }
+            else
+            {
+                DependencyPicker.SetDiscovered(_projectModel.Repositories);
+                DependencyPicker.SetSelectedDependencies(selectedReferences);
+            }
+        }
+        finally
+        {
+            _isSyncingRepositorySelection = false;
+        }
+
+        SyncSelectedRepositoriesToState();
+    }
+
+    private void SyncSelectedRepositoriesToState()
+    {
+        if (_sessionState is null)
+        {
+            return;
+        }
+
+        _sessionState.RepositoryRefs.Clear();
+        foreach (var option in DependencyPicker.GetSelectedOptions())
+        {
+            if (option.Ref is not null)
+            {
+                _sessionState.RepositoryRefs.Add(option.Ref);
+            }
+        }
+        OnPropertyChanged(nameof(HasUnsavedChanges));
+        OnPropertyChanged(nameof(CanBuildPlan));
+    }
+
+    private List<FeatureItemViewModel> BuildFeatureItems(ProjectModel project)
+    {
+        var items = new List<FeatureItemViewModel>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var feature in project.Features.OrderBy(feature => feature.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            var reference = new ArtifactRef(
+                GeneratorNodeKind.Feature,
+                ArtifactOrigin.Project,
+                feature.Name,
+                FeaturePath: feature.RelativePath,
+                ProjectPath: feature.Path,
+                DisplayName: feature.Name);
+            if (seen.Add(reference.FeaturePath ?? reference.Name))
+            {
+                items.Add(new FeatureItemViewModel(reference));
+            }
+        }
+
+        if (_generationSession is not null)
+        {
+            foreach (var feature in _generationSession.Artifacts.GetFeatures().OrderBy(feature => feature.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                var key = feature.Ref.NodeId.HasValue ? $"session:{feature.Ref.NodeId.Value:D}" : feature.FeaturePath ?? feature.Name;
+                if (seen.Add(key))
+                {
+                    items.Add(new FeatureItemViewModel(feature.Ref));
+                }
+            }
+        }
+
+        return items;
+    }
+
+    private static bool ArtifactRefEquals(ArtifactRef left, ArtifactRef right)
+    {
+        if (left.NodeId.HasValue && right.NodeId.HasValue)
+        {
+            return left.NodeId == right.NodeId;
+        }
+
+        return left.Kind == right.Kind &&
+               left.Origin == right.Origin &&
+               string.Equals(left.Name, right.Name, StringComparison.OrdinalIgnoreCase) &&
+               string.Equals(left.FeaturePath, right.FeaturePath, StringComparison.OrdinalIgnoreCase);
     }
 }

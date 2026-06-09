@@ -10,7 +10,7 @@ using CqrsGenerator.Gui.Session.States;
 namespace CqrsGenerator.Gui.ViewModels.Generators;
 
 public sealed partial class CreateFeatureRootSessionViewModel : ObservableObject,
-    IPlanBuildingRootSessionViewModel,
+    IRootGeneratorSessionViewModel,
     IWorkspaceAwareGeneratorSessionViewModel,
     IGeneratorNodeEditorViewModel
 {
@@ -21,6 +21,7 @@ public sealed partial class CreateFeatureRootSessionViewModel : ObservableObject
     private readonly FeatureGeneratorState? _sessionState;
     private ProjectModel? _projectModel;
     private bool _hasNonRootSubfolder;
+    private bool _isReloadingSubfolderPicker;
 
     public GeneratorNode? Node { get; set; }
 
@@ -49,8 +50,8 @@ public sealed partial class CreateFeatureRootSessionViewModel : ObservableObject
 
         if (_sessionState is not null)
         {
-            FeaturePath = _sessionState.FeatureName;
-            CreateWebFeature = _sessionState.CreateWebFeature;
+            _featurePath = _sessionState.FeatureName;
+            _createWebFeature = _sessionState.CreateWebFeature;
         }
 
         StatusText = _isStandalone ? "Configure New Feature." : "Define feature draft.";
@@ -166,6 +167,7 @@ public sealed partial class CreateFeatureRootSessionViewModel : ObservableObject
     {
         _projectModel = project;
         _hasNonRootSubfolder = false;
+        var savedSubfolder = _sessionState?.Subfolder;
 
         OnPropertyChanged(nameof(CanBuildPlan));
         OnPropertyChanged(nameof(CanComplete));
@@ -173,12 +175,23 @@ public sealed partial class CreateFeatureRootSessionViewModel : ObservableObject
 
         if (project is null)
         {
+            _isReloadingSubfolderPicker = true;
             SubfolderPicker.Items = new List<string> { "(root folder)" };
+            _isReloadingSubfolderPicker = false;
+            if (SubfolderPicker.Items.Count > 0)
+            {
+                SubfolderPicker.SelectRawItem(SubfolderPicker.Items[0]);
+            }
             StatusText = "Open a project first.";
             return;
         }
 
+        _isReloadingSubfolderPicker = true;
         PopulateSubfolderPicker(project);
+        RestoreSubfolderSelection(savedSubfolder);
+        _isReloadingSubfolderPicker = false;
+        SyncToSessionState();
+        UpdateSubfolderFlag();
         StatusText = "Enter a feature name.";
     }
 
@@ -207,9 +220,40 @@ public sealed partial class CreateFeatureRootSessionViewModel : ObservableObject
         if (e.PropertyName is nameof(WrappedListPickerViewModel.SelectedItem)
             or nameof(WrappedListPickerViewModel.SearchText))
         {
+            if (_isReloadingSubfolderPicker)
+            {
+                return;
+            }
+
+            SyncToSessionState();
             OnPropertyChanged(nameof(CanBuildPlan));
             OnPropertyChanged(nameof(CanComplete));
             UpdateSubfolderFlag();
         }
+    }
+
+    private void RestoreSubfolderSelection(string? savedSubfolder)
+    {
+        if (string.IsNullOrWhiteSpace(savedSubfolder))
+        {
+            SubfolderPicker.SearchText = string.Empty;
+            if (SubfolderPicker.Items.Count > 0)
+            {
+                SubfolderPicker.SelectRawItem(SubfolderPicker.Items[0]);
+            }
+            return;
+        }
+
+        var existing = SubfolderPicker.Items.Cast<string>()
+            .FirstOrDefault(item => string.Equals(item, savedSubfolder, StringComparison.OrdinalIgnoreCase));
+
+        if (existing is not null)
+        {
+            SubfolderPicker.SearchText = string.Empty;
+            SubfolderPicker.SelectRawItem(existing);
+            return;
+        }
+
+        SubfolderPicker.SearchText = savedSubfolder;
     }
 }

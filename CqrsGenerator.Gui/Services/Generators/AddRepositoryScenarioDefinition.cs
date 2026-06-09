@@ -6,9 +6,9 @@ namespace CqrsGenerator.Gui.Services.Generators;
 
 public sealed class AddRepositoryScenarioDefinition : IGeneratorScenarioDefinition
 {
-    private readonly Func<IEmbeddedSessionHost, RepositoryRootSessionViewModel> _factory;
+    private readonly Func<RepositoryRootSessionViewModel> _factory;
 
-    public AddRepositoryScenarioDefinition(Func<IEmbeddedSessionHost, RepositoryRootSessionViewModel> factory)
+    public AddRepositoryScenarioDefinition(Func<RepositoryRootSessionViewModel> factory)
     {
         _factory = factory;
         Descriptor = new GenerationActionDescriptor("add-repository", "Add Repository", "Application", "Ready", true);
@@ -18,6 +18,5 @@ public sealed class AddRepositoryScenarioDefinition : IGeneratorScenarioDefiniti
 
     public bool IsAvailable(WorkspaceState state) => true;
 
-    public IRootGeneratorSessionViewModel CreateRootSession(IEmbeddedSessionHost embeddedSessionHost) =>
-        _factory(embeddedSessionHost);
+    public IRootGeneratorSessionViewModel CreateRootSession() => _factory();
 }

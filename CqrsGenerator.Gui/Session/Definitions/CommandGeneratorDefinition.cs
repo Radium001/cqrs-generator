@@ -35,7 +35,6 @@ public sealed class CommandGeneratorDefinition : GeneratorDefinition<CommandGene
         var efPreparationService = services.ServiceProvider.GetRequiredService<EfEntityPreparationService>();
         var vm = new CommandRootSessionViewModel(
             new GenerationActionDescriptor("add-command", "Add Command", "Application", "Ready", true),
-            null!,
             planService,
             scenarioOutlineBuilder,
             repositoryPlanService,
@@ -56,8 +55,9 @@ public sealed class CommandGeneratorDefinition : GeneratorDefinition<CommandGene
         if (string.IsNullOrWhiteSpace(state.CommandName))
             return GeneratorValidationResult.Error("Command name is required.");
 
-        var danglingRepos = state.RepositoryNodeIds
-            .Select(id => session.FindNode(id))
+        var danglingRepos = state.RepositoryRefs
+            .Where(reference => reference.IsFromSession && reference.NodeId.HasValue)
+            .Select(reference => session.FindNode(reference.NodeId!.Value))
             .Where(n => n is null)
             .Count();
 
@@ -85,7 +85,7 @@ public sealed class CommandGeneratorDefinition : GeneratorDefinition<CommandGene
 
         var formState = new AddCommandFormState(
             null,
-            state.FeaturePath,
+            state.FeatureRef?.FeaturePath,
             state.CommandName,
             state.ResponseType,
             state.Parameters
