@@ -6,6 +6,8 @@ using CqrsGenerator.Core.Generation;
 using CqrsGenerator.Core.Workflows;
 using CqrsGenerator.Gui.Services;
 using CqrsGenerator.Gui.Services.Generators;
+using CqrsGenerator.Gui.Session;
+using CqrsGenerator.Gui.Session.Definitions;
 using CqrsGenerator.Gui.ViewModels;
 using CqrsGenerator.Gui.ViewModels.Generators;
 using CqrsGenerator.Gui.Views;
@@ -76,6 +78,19 @@ public partial class App : Application
         services.AddSingleton<IWorkspaceGenerationCoordinator, WorkspaceGenerationCoordinator>();
         services.AddSingleton<IWorkspaceApplyService, WorkspaceApplyService>();
         services.AddSingleton<IWorkspaceSessionService, WorkspaceSessionService>();
+
+        services.AddSingleton<GenerationSession>();
+        services.AddSingleton<IGenerationSessionNavigator, GenerationSessionNavigator>();
+
+        services.AddSingleton<IGeneratorDefinition>(new DtoGeneratorDefinition());
+        services.AddSingleton<IGeneratorDefinition>(new QueryGeneratorDefinition());
+        services.AddSingleton<IGeneratorDefinition>(new CommandGeneratorDefinition());
+        services.AddSingleton<IGeneratorDefinition>(new RepositoryGeneratorDefinition());
+        services.AddSingleton<IGeneratorDefinition>(new EntityGeneratorDefinition());
+        services.AddSingleton<IGeneratorDefinition>(new WebPageGeneratorDefinition());
+        services.AddSingleton<IGeneratorDefinition>(new FeatureGeneratorDefinition());
+        services.AddSingleton<GeneratorDefinitionCatalog>();
+        services.AddSingleton<GenerationSessionPlanBuilder>();
 
         services.AddSingleton<IGeneratorScenarioDefinition>(provider =>
             new AddQueryScenarioDefinition(host => new AddQueryRootSessionViewModel(

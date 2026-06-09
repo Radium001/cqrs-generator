@@ -13,24 +13,18 @@
               BorderBrush="{DynamicResource BorderBrush}"
               BorderThickness="1"
               CornerRadius="6">
-        <Grid RowDefinitions="Auto,Auto,Auto"
-              RowSpacing="8">
+<Grid RowDefinitions="Auto,Auto,Auto"
+                RowSpacing="8">
           <TextBlock Text="Feature"
                      FontWeight="SemiBold" />
           <shared:WrappedListPicker Grid.Row="1"
                                      DataContext="{Binding FeaturePicker}"
                                      HorizontalAlignment="Left" />
-          <StackPanel Grid.Row="2"
-                      Orientation="Horizontal"
-                      Spacing="8">
-            <Button Content="Create Feature"
-                    Command="{Binding OpenCreateFeatureCommand}"
-                    HorizontalAlignment="Left"
-                    IsVisible="{Binding ShowCreateFeatureButton}" />
-            <Grid IsVisible="{Binding HasCustomFeature}">
-              <shared:ItemChip DataContext="{Binding CustomFeatureChip}" />
-            </Grid>
-          </StackPanel>
+          <Button Grid.Row="2"
+                  Content="Create Feature"
+                  Command="{Binding OpenCreateFeatureCommand}"
+                  HorizontalAlignment="Left"
+                  IsVisible="{Binding ShowCreateFeatureButton}" />
         </Grid>
       </Border>
 
@@ -73,17 +67,11 @@
                                       HorizontalAlignment="Left" />
           </Grid>
 
-          <StackPanel Grid.Row="2"
-                      Orientation="Horizontal"
-                      Spacing="8">
-            <Button Content="Create DTO"
-                    Command="{Binding OpenCreateDtoCommand}"
-                    HorizontalAlignment="Left"
-                    IsVisible="{Binding ShowCreateDtoButton}" />
-            <Grid IsVisible="{Binding HasCustomDto}">
-              <shared:ItemChip DataContext="{Binding CustomChip}" />
-            </Grid>
-          </StackPanel>
+          <Button Grid.Row="2"
+                  Content="Create DTO"
+                  Command="{Binding OpenCreateDtoCommand}"
+                  HorizontalAlignment="Left"
+                  IsVisible="{Binding ShowCreateDtoButton}" />
         </Grid>
       </Border>
 

@@ -7,41 +7,39 @@ using CqrsGenerator.Core.Generation;
 using CqrsGenerator.Gui.Collections;
 using CqrsGenerator.Gui.Models;
 using CqrsGenerator.Gui.Services;
+using CqrsGenerator.Gui.Session;
+using CqrsGenerator.Gui.Session.States;
 using CqrsGenerator.Gui.ViewModels;
 
 namespace CqrsGenerator.Gui.ViewModels.Generators;
 
 public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
     IPlanBuildingRootSessionViewModel,
-    IEmbeddedGeneratorSessionViewModel<AddQueryFormState>,
-    IWorkspaceAwareGeneratorSessionViewModel
+    IWorkspaceAwareGeneratorSessionViewModel,
+    IGeneratorNodeEditorViewModel
 {
     private static readonly IReadOnlyList<string> DtoSuffixes = ["", GeneratorConstants.DtoSuffix];
     private static readonly IReadOnlyList<(string Prefix, ResponseShape Shape)> PrefixShapeMap =
         [("", ResponseShape.Single), (GeneratorConstants.ListWrapperPrefix, ResponseShape.List), (GeneratorConstants.EnumerableWrapperPrefix, ResponseShape.Enumerable)];
 
-    private readonly IEmbeddedSessionHost _embeddedSessionHost;
     private readonly IAddQueryPlanService _planService;
-    private readonly IAddDtoPlanService? _addDtoPlanService;
-    private readonly IAddDtoScenarioOutlineBuilder? _addDtoScenarioOutlineBuilder;
     private readonly IQueryServiceSuggestionService? _queryServiceSuggestionService;
     private readonly IAddQueryScenarioOutlineBuilder _scenarioOutlineBuilder;
     private readonly bool _isStandalone;
     private readonly string? _fixedFeaturePath;
-    private readonly SessionArtifactRegistry? _artifactRegistry;
-    private readonly ICreateFeaturePlanService? _createFeaturePlanService;
-    private readonly ICreateFeatureScenarioOutlineBuilder? _createFeatureScenarioOutlineBuilder;
     private static readonly IReadOnlyList<string> MethodNameSuffixes = ["", GeneratorConstants.AsyncSuffix];
     private ProjectModel? _projectModel;
     private bool _isSyncingFeature;
     private bool _isSyncingQueryName;
-    private QueryDtoChoiceViewModel? _customDtoViewModel;
-    private ItemChipViewModel? _customChip;
     private QueryServiceSuggestion? _queryServiceSuggestion;
     private bool _isSyncingMethodName;
     private bool _methodNameAutoDerived = true;
-    private FeatureItemViewModel? _customFeatureViewModel;
-    private ItemChipViewModel? _customFeatureChip;
+    private readonly QueryGeneratorState? _sessionState;
+    private GenerationSession? _generationSession;
+    private IGenerationSessionNavigator? _navigator;
+
+    private GeneratorNode? _node;
+    public GeneratorNode? Node { get => _node; set => _node = value; }
 
     public AddQueryRootSessionViewModel(
         GenerationActionDescriptor? actionDescriptor,
@@ -52,21 +50,17 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
         IQueryServiceSuggestionService? queryServiceSuggestionService,
         IAddQueryScenarioOutlineBuilder scenarioOutlineBuilder,
         string? fixedFeaturePath = null,
-        SessionArtifactRegistry? artifactRegistry = null,
         ICreateFeaturePlanService? createFeaturePlanService = null,
-        ICreateFeatureScenarioOutlineBuilder? createFeatureScenarioOutlineBuilder = null)
+        ICreateFeatureScenarioOutlineBuilder? createFeatureScenarioOutlineBuilder = null,
+        GeneratorNode? node = null)
     {
-        _embeddedSessionHost = embeddedSessionHost;
         _planService = planService;
-        _addDtoPlanService = addDtoPlanService;
-        _addDtoScenarioOutlineBuilder = addDtoScenarioOutlineBuilder;
         _queryServiceSuggestionService = queryServiceSuggestionService;
         _scenarioOutlineBuilder = scenarioOutlineBuilder;
         _isStandalone = actionDescriptor is not null;
         _fixedFeaturePath = fixedFeaturePath;
-        _artifactRegistry = artifactRegistry;
-        _createFeaturePlanService = createFeaturePlanService;
-        _createFeatureScenarioOutlineBuilder = createFeatureScenarioOutlineBuilder;
+        _node = node;
+        _sessionState = node?.State as QueryGeneratorState;
         ActionDescriptor = actionDescriptor;
         SessionId = _isStandalone
             ? $"root:{actionDescriptor!.ActionId}"
@@ -119,8 +113,8 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
 
         AddParameterCommand = new RelayCommand(AddParameter);
         RemoveParameterCommand = new RelayCommand<PropertyEntryViewModel>(RemoveParameter);
-        OpenCreateDtoCommand = new RelayCommand(OpenCreateDto);
-        OpenCreateFeatureCommand = new RelayCommand(OpenCreateFeature);
+        OpenCreateDtoCommand = new RelayCommand(OpenCreateDto, () => Node is not null);
+        OpenCreateFeatureCommand = new RelayCommand(OpenCreateFeature, () => Node is not null);
         ParameterEditor = new PropertyEntryListEditorViewModel(
             Parameters,
             AddParameterCommand,
@@ -134,6 +128,26 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
             OnPropertyChanged(nameof(CanBuildPlan));
             OnPropertyChanged(nameof(HasUnsavedChanges));
         };
+
+        if (_sessionState is not null)
+        {
+            QueryNameCyclic.Text = _sessionState.QueryName;
+            foreach (var param in _sessionState.Parameters)
+            {
+                Parameters.Add(new PropertyEntryViewModel(param.Type, param.Name));
+            }
+        }
+    }
+
+    public void SetGenerationSession(GenerationSession session, IGenerationSessionNavigator navigator)
+    {
+        _generationSession = session;
+        _navigator = navigator;
+        if (_node is null && _isStandalone)
+        {
+            var state = new QueryGeneratorState { QueryName = "Get" };
+            _node = navigator.CreateRoot(GeneratorNodeKind.Query, state);
+        }
     }
 
     public WrappedListPickerViewModel FeaturePicker { get; }
@@ -164,8 +178,6 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
         !string.IsNullOrWhiteSpace(QueryName) ||
         !string.IsNullOrWhiteSpace(MethodNameCyclic.Text) ||
         Parameters.Count > 0 ||
-        CustomDto is not null ||
-        CustomFeature is not null ||
         !CreateQueryServiceMethod ||
         !GenerateHandlerBody ||
         !GenerateQueryServiceBody ||
@@ -197,29 +209,13 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
 
     public PropertyEntryListEditorViewModel ParameterEditor { get; }
 
-    public bool HasCustomDto => CustomDto is not null;
-
-    public bool ShowCreateDtoButton => !HasCustomDto;
-
-    public bool HasCustomFeature => CustomFeature is not null;
-
-    public bool ShowCreateFeatureButton => !HasCustomFeature;
-
-    public ItemChipViewModel? CustomChip => _customChip;
-
-    public ItemChipViewModel? CustomFeatureChip => _customFeatureChip;
-
-    public string? CustomDtoName => GetFullDtoName();
-
-    public int CustomDtoPropertiesCount => CustomDto?.Properties.Count ?? 0;
-
     public QueryDtoChoiceViewModel? SelectedDtoChoice => ResultTypePicker.SelectedRawItem as QueryDtoChoiceViewModel;
 
     public QueryDtoSelectionState? SelectedDtoSelection => CreateDtoSelectionState();
 
     public bool ShowDtoPromotionHint => SelectedDtoRequiresPromotion;
 
-    public bool SelectedDtoRequiresPromotion => SelectedDtoChoice?.IsLocal == true && !HasCustomDto;
+    public bool SelectedDtoRequiresPromotion => SelectedDtoChoice?.IsLocal == true;
 
     public bool SelectedDtoSelectionBlocked => SelectedDtoChoice is { IsSelectable: false };
 
@@ -237,17 +233,9 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
 
     public IRelayCommand OpenCreateFeatureCommand { get; }
 
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasCustomDto))]
-    [NotifyPropertyChangedFor(nameof(ShowCreateDtoButton))]
-    [NotifyPropertyChangedFor(nameof(CustomDtoName))]
-    [NotifyPropertyChangedFor(nameof(CustomDtoPropertiesCount))]
-    private NewDtoDraft? _customDto;
+    public bool ShowCreateDtoButton => Node is not null && _navigator is not null;
 
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasCustomFeature))]
-    [NotifyPropertyChangedFor(nameof(ShowCreateFeatureButton))]
-    private NewFeatureDraft? _customFeature;
+    public bool ShowCreateFeatureButton => Node is not null && _navigator is not null;
 
     [ObservableProperty]
     private FeatureItemViewModel? _selectedFeature;
@@ -278,126 +266,16 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
         ReloadProject(workspaceContext?.ProjectModel);
     }
 
-    public IReadOnlyList<ScenarioNodeViewModel> GetScenarioNodes() => _scenarioOutlineBuilder.Build(CreateFormState());
+    public IReadOnlyList<ScenarioNodeViewModel> GetScenarioNodes()
+    {
+        if (Node is null) return [];
+        return ScenarioOutlineProjector.Project(Node);
+    }
 
     public GenerationPlan BuildPlan(ProjectWorkspaceContext workspaceContext)
     {
         ArgumentNullException.ThrowIfNull(workspaceContext);
-        var plan = _planService.BuildPlan(workspaceContext, CreateFormState());
-
-        if (CustomFeature is not null && _createFeaturePlanService is not null)
-        {
-            var featureFormState = new CreateFeatureFormState(
-                CustomFeature.FeatureName,
-                CustomFeature.Subfolder,
-                CustomFeature.CreateWebFeature);
-            var featurePlan = _createFeaturePlanService.BuildPlan(workspaceContext, featureFormState);
-            plan.Merge(featurePlan);
-        }
-
-        return plan;
-    }
-
-    public AddQueryFormState BuildDraft()
-    {
-        return CreateFormState();
-    }
-
-    public void FinishCustomDto(NewDtoDraft draft)
-    {
-        CustomDto = draft;
-
-        var fullName = GetFullDtoName(draft) ?? draft.BaseName;
-        _customDtoViewModel = new QueryDtoChoiceViewModel(
-            fullName,
-            fullName + " (custom)",
-            string.Empty,
-            DtoLocationKind.LocalQueryDto,
-            GetQueryBaseName(),
-            isRuntime: true);
-        ResultTypeItems.AddRuntime(_customDtoViewModel);
-        ResultTypePicker.LockSelection(_customDtoViewModel);
-
-        if (_artifactRegistry is not null && SelectedFeature is not null)
-        {
-            _artifactRegistry.PublishDto(
-                fullName,
-                draft,
-                new DtoInfo(
-                    fullName,
-                    SelectedFeature.RelativePath,
-                    string.Empty,
-                    string.Empty,
-                    fullName,
-                    DtoLocationKind.LocalQueryDto,
-                    GetQueryBaseName()));
-        }
-
-        _customChip = new ItemChipViewModel(
-            fullName,
-            editAction: () =>
-            {
-                var session = new DtoRootSessionViewModel(
-                    actionDescriptor: null,
-                    _addDtoPlanService!,
-                    _embeddedSessionHost,
-                    _addDtoScenarioOutlineBuilder!,
-                    isStandalone: false,
-                    fixedFeature: SelectedFeature,
-                    existingDraft: draft);
-                _embeddedSessionHost.Open<NewDtoDraft>(session, result =>
-                {
-                    FinishCustomDto(result);
-                });
-            },
-            deleteAction: DeleteCustomDto);
-
-        OnPropertyChanged(nameof(CustomChip));
-        OnPropertyChanged(nameof(SelectedDtoSelection));
-        OnPropertyChanged(nameof(CanBuildPlan));
-        OnPropertyChanged(nameof(HasUnsavedChanges));
-    }
-
-    public void FinishCustomFeature(NewFeatureDraft draft)
-    {
-        var featurePath = draft.Subfolder is not null
-            ? $"{draft.Subfolder}/{draft.FeatureName}"
-            : draft.FeatureName;
-
-        _customFeatureViewModel = new FeatureItemViewModel(
-            draft.FeatureName,
-            featurePath,
-            isRuntime: true);
-
-        FeatureItems.AddRuntime(_customFeatureViewModel);
-        FeaturePicker.LockSelection(_customFeatureViewModel);
-
-        _isSyncingFeature = true;
-        SelectedFeature = _customFeatureViewModel;
-        _isSyncingFeature = false;
-
-        CustomFeature = draft;
-
-        _customFeatureChip = new ItemChipViewModel(
-            draft.FeatureName,
-            editAction: () =>
-            {
-                var session = new CreateFeatureRootSessionViewModel(
-                    actionDescriptor: null,
-                    _createFeaturePlanService!,
-                    _createFeatureScenarioOutlineBuilder!,
-                    isStandalone: false,
-                    existingDraft: draft);
-                _embeddedSessionHost.Open<NewFeatureDraft>(session, result =>
-                {
-                    FinishCustomFeature(result);
-                });
-            },
-            deleteAction: DeleteCustomFeature);
-
-        OnPropertyChanged(nameof(CustomFeatureChip));
-        OnPropertyChanged(nameof(CanBuildPlan));
-        OnPropertyChanged(nameof(HasUnsavedChanges));
+        return _planService.BuildPlan(workspaceContext, CreateFormState());
     }
 
     partial void OnSelectedFeatureChanged(FeatureItemViewModel? value)
@@ -430,6 +308,7 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
 
     partial void OnQueryNameChanged(string value)
     {
+        SyncToSessionState();
         OnPropertyChanged(nameof(CanBuildPlan));
         OnPropertyChanged(nameof(HasUnsavedChanges));
 
@@ -463,17 +342,8 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
         FeaturePicker.UnlockSelection();
         ResultTypeItems.ClearRuntime();
         ResultTypePicker.UnlockSelection();
-        CustomDto = null;
-        _customDtoViewModel = null;
-        _customChip = null;
-        CustomFeature = null;
-        _customFeatureViewModel = null;
-        _customFeatureChip = null;
         SetQueryServiceSuggestion(null);
 
-        OnPropertyChanged(nameof(CustomChip));
-        OnPropertyChanged(nameof(CustomFeatureChip));
-        OnPropertyChanged(nameof(SelectedDtoSelection));
         OnPropertyChanged(nameof(CanBuildPlan));
         OnPropertyChanged(nameof(HasUnsavedChanges));
 
@@ -572,6 +442,7 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
 
     partial void OnCreateQueryServiceMethodChanged(bool value)
     {
+        SyncToSessionState();
         OnPropertyChanged(nameof(CanBuildPlan));
         OnPropertyChanged(nameof(HasUnsavedChanges));
     }
@@ -583,6 +454,7 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
             or nameof(WrappedListPickerViewModel.SearchText)
             or nameof(WrappedListPickerViewModel.SelectedBaseName))
         {
+            SyncToSessionState();
             OnPropertyChanged(nameof(CanBuildPlan));
             OnPropertyChanged(nameof(CanComplete));
             OnPropertyChanged(nameof(SelectedDtoChoice));
@@ -592,93 +464,6 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
             OnPropertyChanged(nameof(SelectedDtoRequiresPromotion));
             OnPropertyChanged(nameof(SelectedDtoSelectionBlocked));
         }
-    }
-
-    private void OpenCreateDto()
-    {
-        if (_addDtoPlanService is null || _addDtoScenarioOutlineBuilder is null)
-        {
-            return;
-        }
-
-        var createDtoSession = new DtoRootSessionViewModel(
-            actionDescriptor: null,
-            _addDtoPlanService,
-            _embeddedSessionHost,
-            _addDtoScenarioOutlineBuilder,
-            isStandalone: false,
-            fixedFeature: SelectedFeature,
-            existingDraft: CustomDto);
-        _embeddedSessionHost.Open<NewDtoDraft>(
-            createDtoSession,
-            FinishCustomDto);
-    }
-
-    private void OpenCreateFeature()
-    {
-        if (_createFeaturePlanService is null || _createFeatureScenarioOutlineBuilder is null)
-        {
-            return;
-        }
-
-        var createFeatureSession = new CreateFeatureRootSessionViewModel(
-            actionDescriptor: null,
-            _createFeaturePlanService,
-            _createFeatureScenarioOutlineBuilder,
-            isStandalone: false,
-            existingDraft: CustomFeature);
-        _embeddedSessionHost.Open<NewFeatureDraft>(
-            createFeatureSession,
-            FinishCustomFeature);
-    }
-
-    private void DeleteCustomDto()
-    {
-        if (_customDtoViewModel is not null)
-        {
-            ResultTypeItems.RemoveRuntime(_customDtoViewModel);
-            ResultTypePicker.UnlockSelection();
-            if (_artifactRegistry is not null)
-            {
-                _artifactRegistry.RemoveDto(_customDtoViewModel.Name);
-            }
-        }
-
-        CustomDto = null;
-        _customDtoViewModel = null;
-        _customChip = null;
-
-        OnPropertyChanged(nameof(CustomChip));
-        OnPropertyChanged(nameof(CanBuildPlan));
-        OnPropertyChanged(nameof(HasUnsavedChanges));
-    }
-
-    private void DeleteCustomFeature()
-    {
-        if (_customFeatureViewModel is not null)
-        {
-            FeatureItems.RemoveRuntime(_customFeatureViewModel);
-            FeaturePicker.UnlockSelection();
-        }
-
-        CustomFeature = null;
-        _customFeatureViewModel = null;
-        _customFeatureChip = null;
-
-        if (_isSyncingFeature)
-        {
-            _isSyncingFeature = false;
-        }
-        else
-        {
-            _isSyncingFeature = true;
-            SelectedFeature = null;
-            _isSyncingFeature = false;
-        }
-
-        OnPropertyChanged(nameof(CustomFeatureChip));
-        OnPropertyChanged(nameof(CanBuildPlan));
-        OnPropertyChanged(nameof(HasUnsavedChanges));
     }
 
     private void SetQueryServiceSuggestion(QueryServiceSuggestion? suggestion)
@@ -736,19 +521,20 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
                     : null))
             .ToList();
 
-        if (_artifactRegistry is not null)
+        if (_generationSession is not null)
         {
-            foreach (var regDto in _artifactRegistry.DtoInfos)
+            var sessionDtos = _generationSession.Artifacts.GetDtos(featurePath);
+            foreach (var sessionDto in sessionDtos)
             {
-                if (!discoveredDtos.Any(d => d.Name == regDto.Name))
+                if (!discoveredDtos.Any(d => d.Name == sessionDto.Name))
                 {
                     discoveredDtos.Add(new QueryDtoChoiceViewModel(
-                        regDto.Name,
-                        regDto.DisplayName,
-                        regDto.Namespace,
-                        regDto.LocationKind,
-                        regDto.OwnerQueryName,
-                        regDto.Path,
+                        sessionDto.Name,
+                        sessionDto.Name + " (session)",
+                        string.Empty,
+                        DtoLocationKind.LocalQueryDto,
+                        queryBaseName,
+                        string.Empty,
                         isRuntime: true));
                 }
             }
@@ -756,11 +542,6 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
 
         ResultTypeItems.SetDiscovered(discoveredDtos);
         ResultTypePicker.RawItems = ResultTypeItems;
-
-        if (_customDtoViewModel is not null)
-        {
-            ResultTypePicker.SelectRawItem(_customDtoViewModel);
-        }
     }
 
     private AddQueryFormState CreateFormState()
@@ -770,7 +551,7 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
             SelectedFeature?.RelativePath,
             QueryName,
             CreateDtoSelectionState(),
-            CustomDto,
+            null,
             GetShapeFromPrefixIndex(ResultTypePicker.SelectedPrefixIndex),
             Parameters
                 .Where(parameter => !string.IsNullOrWhiteSpace(parameter.Type) && !string.IsNullOrWhiteSpace(parameter.Name))
@@ -786,25 +567,6 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
 
     private QueryDtoSelectionState? CreateDtoSelectionState()
     {
-        if (HasCustomDto && CustomDto is not null)
-        {
-            var dtoName = GetFullDtoName();
-            if (string.IsNullOrWhiteSpace(dtoName))
-            {
-                return null;
-            }
-
-            return new QueryDtoSelectionState(
-                dtoName,
-                null,
-                null,
-                DtoLocationKind.LocalQueryDto,
-                GetQueryBaseName(),
-                CreateNewLocalDto: true,
-                IsSelectable: true,
-                SelectionBlockedReason: null);
-        }
-
         if (ResultTypePicker.SelectedItem is { IsCustom: true })
         {
             var dtoName = ResultTypePicker.SelectedBaseName;
@@ -840,21 +602,11 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
         return null;
     }
 
-    private string? GetFullDtoName() => CustomDto is null ? null : GetFullDtoName(CustomDto);
-
     private string GetMethodName()
     {
         return string.IsNullOrWhiteSpace(MethodNameCyclic.Text)
             ? string.Empty
             : MethodNameCyclic.FullText;
-    }
-
-    private static string? GetFullDtoName(NewDtoDraft draft)
-    {
-        var suffix = draft.SuffixIndex >= 0 && draft.SuffixIndex < DtoSuffixes.Count
-            ? DtoSuffixes[draft.SuffixIndex]
-            : string.Empty;
-        return draft.BaseName + suffix;
     }
 
     private static ResponseShape GetShapeFromPrefixIndex(int index)
@@ -885,6 +637,7 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
     private void AddParameter()
     {
         Parameters.Add(new PropertyEntryViewModel("string", $"param{Parameters.Count + 1}"));
+        SyncToSessionState();
         OnPropertyChanged(nameof(CanBuildPlan));
     }
 
@@ -896,6 +649,39 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
         }
 
         Parameters.Remove(parameter);
+        SyncToSessionState();
         OnPropertyChanged(nameof(CanBuildPlan));
+    }
+
+    private void SyncToSessionState()
+    {
+        if (_sessionState is null) return;
+        _sessionState.QueryName = QueryNameCyclic.FullText.Trim();
+        if (SelectedFeature is not null)
+        {
+            _sessionState.FeaturePath = SelectedFeature.RelativePath;
+        }
+        _sessionState.ExistingResultDtoName = ResultTypePicker.SelectedBaseName;
+        _sessionState.Parameters.Clear();
+        foreach (var p in Parameters.Where(p => !string.IsNullOrWhiteSpace(p.Type) && !string.IsNullOrWhiteSpace(p.Name)))
+        {
+            _sessionState.Parameters.Add(new PropertySpec(p.Type.Trim(), p.Name.Trim()));
+        }
+    }
+
+    private void OpenCreateDto()
+    {
+        if (Node is null || _navigator is null) return;
+        var state = new DtoGeneratorState { BaseName = "NewDto" };
+        var child = _navigator.CreateChild(Node, GeneratorNodeKind.Dto, state);
+        _navigator.OpenNode(child.Id);
+    }
+
+    private void OpenCreateFeature()
+    {
+        if (Node is null || _navigator is null) return;
+        var state = new FeatureGeneratorState { FeatureName = "NewFeature" };
+        var child = _navigator.CreateChild(Node, GeneratorNodeKind.Feature, state);
+        _navigator.OpenNode(child.Id);
     }
 }

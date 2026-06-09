@@ -9,5 +9,5 @@ public sealed record AddCommandFormState(
     string? ResponseType,
     IReadOnlyList<PropertySpec> Properties,
     IReadOnlyList<CommandHandlerDependency> Dependencies,
-    IReadOnlyList<NewRepositoryDraft> RepositoryDrafts,
+    IReadOnlyList<object> RepositoryDrafts,
     bool UpdateWebImports);

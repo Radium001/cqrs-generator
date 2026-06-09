@@ -7,27 +7,29 @@ using CqrsGenerator.Core.Generation;
 using CqrsGenerator.Gui.Collections;
 using CqrsGenerator.Gui.Models;
 using CqrsGenerator.Gui.Services;
+using CqrsGenerator.Gui.Session;
+using CqrsGenerator.Gui.Session.States;
 
 namespace CqrsGenerator.Gui.ViewModels.Generators;
 
 public sealed partial class RepositoryRootSessionViewModel : ObservableObject,
     IPlanBuildingRootSessionViewModel,
-    IEmbeddedGeneratorSessionViewModel<NewRepositoryDraft>,
-    IWorkspaceAwareGeneratorSessionViewModel
+    IWorkspaceAwareGeneratorSessionViewModel,
+    IGeneratorNodeEditorViewModel
 {
     private readonly GenerationActionDescriptor? _actionDescriptor;
     private readonly IAddRepositoryPlanService _planService;
-    private readonly IEmbeddedSessionHost _embeddedSessionHost;
     private readonly IAddRepositoryScenarioOutlineBuilder _scenarioOutlineBuilder;
-    private readonly IAddEntityPlanService _entityPlanService;
-    private readonly IAddEntityScenarioOutlineBuilder _entityScenarioOutlineBuilder;
-    private readonly EfEntityPreparationService _efEntityPreparationService;
     private readonly RuntimeItemCollection<EntityItemViewModel> _entities;
     private readonly bool _isStandalone;
-    private readonly SessionArtifactRegistry? _artifactRegistry;
+    private readonly RepositoryGeneratorState? _sessionState;
     private ProjectModel? _projectModel;
     private bool _isSyncingEntity;
-    private EntityItemViewModel? _customEntityItemViewModel;
+    private GenerationSession? _generationSession;
+    private IGenerationSessionNavigator? _navigator;
+
+    private GeneratorNode? _node;
+    public GeneratorNode? Node { get => _node; set => _node = value; }
 
     public RepositoryRootSessionViewModel(
         GenerationActionDescriptor? actionDescriptor,
@@ -38,18 +40,14 @@ public sealed partial class RepositoryRootSessionViewModel : ObservableObject,
         IAddEntityScenarioOutlineBuilder entityScenarioOutlineBuilder,
         EfEntityPreparationService efEntityPreparationService,
         bool isStandalone,
-        NewRepositoryDraft? existingDraft = null,
-        SessionArtifactRegistry? artifactRegistry = null)
+        GeneratorNode? node = null)
     {
         _actionDescriptor = actionDescriptor;
         _planService = planService;
-        _embeddedSessionHost = embeddedSessionHost;
         _scenarioOutlineBuilder = scenarioOutlineBuilder;
-        _entityPlanService = entityPlanService;
-        _entityScenarioOutlineBuilder = entityScenarioOutlineBuilder;
-        _efEntityPreparationService = efEntityPreparationService;
         _isStandalone = isStandalone;
-        _artifactRegistry = artifactRegistry;
+        _node = node;
+        _sessionState = node?.State as RepositoryGeneratorState;
 
         SessionId = isStandalone
             ? $"root:add-repository:{Guid.NewGuid():N}"
@@ -63,9 +61,9 @@ public sealed partial class RepositoryRootSessionViewModel : ObservableObject,
         };
         EntityPicker.PropertyChanged += OnEntityPickerChanged;
 
-        OpenCreateEntityCommand = new RelayCommand(OpenCreateEntity);
         AddCustomMethodCommand = new RelayCommand(AddCustomMethod);
         RemoveCustomMethodCommand = new RelayCommand<RepositoryMethodEditorViewModel>(RemoveCustomMethod);
+        OpenCreateEntityCommand = new RelayCommand(OpenCreateEntity, () => Node is not null);
 
         MethodPresets =
         [
@@ -80,25 +78,20 @@ public sealed partial class RepositoryRootSessionViewModel : ObservableObject,
         }
 
         CustomMethods = [];
-        if (existingDraft is not null)
+        if (_sessionState is not null)
         {
-            AddDependencyInjectionRegistration = existingDraft.AddDependencyInjectionRegistration;
-            foreach (var method in existingDraft.Methods.Where(method => !RepositoryMethodCatalog.Presets.Any(p => p.Name == method.Name)))
-            {
-                var editor = new RepositoryMethodEditorViewModel(method.Name, method.ReturnType, method.Parameters, RemoveCustomMethodCommand);
-                editor.PropertyChanged += OnCustomMethodChanged;
-                CustomMethods.Add(editor);
-            }
+            AddDependencyInjectionRegistration = _sessionState.AddDependencyInjectionRegistration;
+        }
+    }
 
-            foreach (var preset in MethodPresets)
-            {
-                preset.IsSelected = existingDraft.Methods.Any(method => method.Name == preset.Name);
-            }
-
-            if (existingDraft.CustomEntity is not null)
-            {
-                FinishCustomEntity(existingDraft.CustomEntity);
-            }
+    public void SetGenerationSession(GenerationSession session, IGenerationSessionNavigator navigator)
+    {
+        _generationSession = session;
+        _navigator = navigator;
+        if (_node is null)
+        {
+            var state = new RepositoryGeneratorState { InterfaceName = "IRepository" };
+            _node = navigator.CreateRoot(GeneratorNodeKind.Repository, state);
         }
     }
 
@@ -114,7 +107,6 @@ public sealed partial class RepositoryRootSessionViewModel : ObservableObject,
 
     public bool HasUnsavedChanges =>
         SelectedEntity is not null ||
-        CustomEntity is not null ||
         CustomMethods.Count > 0 ||
         !AddDependencyInjectionRegistration;
 
@@ -137,32 +129,19 @@ public sealed partial class RepositoryRootSessionViewModel : ObservableObject,
 
     public ObservableCollection<RepositoryMethodEditorViewModel> CustomMethods { get; }
 
-    public IRelayCommand OpenCreateEntityCommand { get; }
-
     public IRelayCommand AddCustomMethodCommand { get; }
 
     public IRelayCommand<RepositoryMethodEditorViewModel> RemoveCustomMethodCommand { get; }
 
-    public bool HasCustomEntity => CustomEntity is not null;
+    public IRelayCommand OpenCreateEntityCommand { get; }
 
-    public bool ShowCreateEntityButton => !HasCustomEntity;
+    public bool ShowCreateEntityButton => Node is not null && _navigator is not null;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanBuildPlan))]
     [NotifyPropertyChangedFor(nameof(CanComplete))]
     [NotifyPropertyChangedFor(nameof(HasUnsavedChanges))]
     private EntityItemViewModel? _selectedEntity;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasCustomEntity))]
-    [NotifyPropertyChangedFor(nameof(ShowCreateEntityButton))]
-    [NotifyPropertyChangedFor(nameof(CanBuildPlan))]
-    [NotifyPropertyChangedFor(nameof(CanComplete))]
-    [NotifyPropertyChangedFor(nameof(HasUnsavedChanges))]
-    private NewEntityDraft? _customEntity;
-
-    [ObservableProperty]
-    private ItemChipViewModel? _customEntityChip;
 
     [ObservableProperty]
     private bool _addDependencyInjectionRegistration = true;
@@ -172,24 +151,16 @@ public sealed partial class RepositoryRootSessionViewModel : ObservableObject,
         ReloadProject(workspaceContext?.ProjectModel);
     }
 
-    public IReadOnlyList<ScenarioNodeViewModel> GetScenarioNodes() => _scenarioOutlineBuilder.Build(CreateFormState());
+    public IReadOnlyList<ScenarioNodeViewModel> GetScenarioNodes()
+    {
+        if (Node is null) return [];
+        return ScenarioOutlineProjector.Project(Node);
+    }
 
     public GenerationPlan BuildPlan(ProjectWorkspaceContext workspaceContext)
     {
         ArgumentNullException.ThrowIfNull(workspaceContext);
         return _planService.BuildPlan(workspaceContext, CreateFormState());
-    }
-
-    public NewRepositoryDraft BuildDraft()
-    {
-        var entity = ResolveEntity() ?? throw new InvalidOperationException("Repository entity is not configured.");
-        return new NewRepositoryDraft(
-            entity.Name,
-            entity.Namespace,
-            CustomEntity is not null,
-            CustomEntity,
-            BuildMethods(entity.Name),
-            AddDependencyInjectionRegistration);
     }
 
     private bool HasEntitySelection => ResolveEntity() is not null;
@@ -202,10 +173,6 @@ public sealed partial class RepositoryRootSessionViewModel : ObservableObject,
         var previousDisplayName = SelectedEntity?.DisplayName;
 
         _entities.ClearRuntime();
-        _customEntityItemViewModel = null;
-        CustomEntity = null;
-        CustomEntityChip = null;
-        OnPropertyChanged(nameof(CustomEntityChip));
         OnPropertyChanged(nameof(HasUnsavedChanges));
 
         if (project is null)
@@ -219,13 +186,14 @@ public sealed partial class RepositoryRootSessionViewModel : ObservableObject,
             .Select(entity => new EntityItemViewModel(entity.Name, entity.DisplayName, entity.Namespace, entity.RelativePath))
             .ToList();
 
-        if (_artifactRegistry is not null)
+        if (_generationSession is not null)
         {
-            foreach (var regEntity in _artifactRegistry.EntityInfos)
+            var sessionEntities = _generationSession.Artifacts.GetEntities();
+            foreach (var sessionEntity in sessionEntities)
             {
-                if (!allEntities.Any(e => e.Name == regEntity.Name))
+                if (!allEntities.Any(e => e.Name == sessionEntity.Name))
                 {
-                    allEntities.Add(new EntityItemViewModel(regEntity.Name, regEntity.DisplayName, regEntity.Namespace, regEntity.RelativePath));
+                    allEntities.Add(new EntityItemViewModel(sessionEntity.Name, sessionEntity.Name, "Domain.Entities", string.Empty));
                 }
             }
         }
@@ -252,81 +220,8 @@ public sealed partial class RepositoryRootSessionViewModel : ObservableObject,
         {
             _isSyncingEntity = true;
             SelectedEntity = EntityPicker.SelectedRawItem as EntityItemViewModel;
-            if (SelectedEntity is not null)
-            {
-                if (_customEntityItemViewModel is not null)
-                {
-                    _entities.RemoveRuntime(_customEntityItemViewModel);
-                    _customEntityItemViewModel = null;
-                }
-
-                CustomEntity = null;
-                CustomEntityChip = null;
-                EntityPicker.UnlockSelection();
-            }
             _isSyncingEntity = false;
         }
-    }
-
-    private void OpenCreateEntity()
-    {
-        var session = new EntityRootSessionViewModel(
-            actionDescriptor: null,
-            _entityPlanService,
-            _entityScenarioOutlineBuilder,
-            _efEntityPreparationService,
-            isStandalone: false,
-            existingDraft: CustomEntity);
-        _embeddedSessionHost.Open(session, FinishCustomEntity);
-    }
-
-    private void FinishCustomEntity(NewEntityDraft draft)
-    {
-        CustomEntity = draft;
-        SelectedEntity = null;
-
-        var entityVm = new EntityItemViewModel(
-            draft.EntityName,
-            draft.EntityName + " (new)",
-            "Domain.Entities",
-            null);
-        _isSyncingEntity = true;
-        _customEntityItemViewModel = entityVm;
-        _entities.AddRuntime(entityVm);
-        EntityPicker.LockSelection(entityVm);
-        _isSyncingEntity = false;
-
-        _artifactRegistry?.PublishEntity(
-            draft.EntityName,
-            draft,
-            new EntityInfo(draft.EntityName, "", draft.EntityName, "Domain.Entities", draft.Subfolder));
-
-        CustomEntityChip = new ItemChipViewModel(
-            draft.EntityName,
-            editAction: () =>
-            {
-                var session = new EntityRootSessionViewModel(
-                    actionDescriptor: null,
-                    _entityPlanService,
-                    _entityScenarioOutlineBuilder,
-                    _efEntityPreparationService,
-                    isStandalone: false,
-                    existingDraft: draft);
-                _embeddedSessionHost.Open(session, FinishCustomEntity);
-            },
-            deleteAction: () =>
-            {
-                if (_customEntityItemViewModel is not null)
-                {
-                    _entities.RemoveRuntime(_customEntityItemViewModel);
-                    _artifactRegistry?.RemoveEntity(_customEntityItemViewModel.Name);
-                }
-
-                _customEntityItemViewModel = null;
-                CustomEntity = null;
-                CustomEntityChip = null;
-                EntityPicker.UnlockSelection();
-            });
     }
 
     private void AddCustomMethod()
@@ -358,7 +253,7 @@ public sealed partial class RepositoryRootSessionViewModel : ObservableObject,
             SelectedEntity?.DisplayName,
             SelectedEntity?.Name,
             SelectedEntity?.Namespace,
-            CustomEntity,
+            null,
             MethodPresets.Where(preset => preset.IsSelected).Select(preset => preset.Key).ToArray(),
             CustomMethods.Select(method => new RepositoryMethodSpec(
                 method.Name,
@@ -385,14 +280,6 @@ public sealed partial class RepositoryRootSessionViewModel : ObservableObject,
 
     private (string Name, string Namespace)? ResolveEntity()
     {
-        if (CustomEntity is not null)
-        {
-            var subfolder = string.IsNullOrWhiteSpace(CustomEntity.Subfolder)
-                ? null
-                : CustomEntity.Subfolder.Replace('/', '.');
-            return (CustomEntity.EntityName.Trim(), subfolder is null ? "Domain.Entities" : $"Domain.Entities.{subfolder}");
-        }
-
         if (SelectedEntity is not null)
         {
             return (SelectedEntity.Name, SelectedEntity.Namespace);
@@ -403,7 +290,14 @@ public sealed partial class RepositoryRootSessionViewModel : ObservableObject,
 
     partial void OnAddDependencyInjectionRegistrationChanged(bool value)
     {
+        SyncToSessionState();
         OnPropertyChanged(nameof(HasUnsavedChanges));
+    }
+
+    private void SyncToSessionState()
+    {
+        if (_sessionState is null) return;
+        _sessionState.AddDependencyInjectionRegistration = AddDependencyInjectionRegistration;
     }
 
     private void OnMethodPresetChanged(object? sender, PropertyChangedEventArgs e)
@@ -421,5 +315,13 @@ public sealed partial class RepositoryRootSessionViewModel : ObservableObject,
         OnPropertyChanged(nameof(CanBuildPlan));
         OnPropertyChanged(nameof(CanComplete));
         OnPropertyChanged(nameof(HasUnsavedChanges));
+    }
+
+    private void OpenCreateEntity()
+    {
+        if (Node is null || _navigator is null) return;
+        var state = new EntityGeneratorState { EntityName = "NewEntity" };
+        var child = _navigator.CreateChild(Node, GeneratorNodeKind.Entity, state);
+        _navigator.OpenNode(child.Id);
     }
 }

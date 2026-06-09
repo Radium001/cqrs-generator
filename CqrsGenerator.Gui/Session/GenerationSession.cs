@@ -1,0 +1,37 @@
+using System.Collections.ObjectModel;
+using CommunityToolkit.Mvvm.ComponentModel;
+
+namespace CqrsGenerator.Gui.Session;
+
+public sealed partial class GenerationSession : ObservableObject
+{
+    public Guid Id { get; } = Guid.NewGuid();
+
+    public ObservableCollection<GeneratorNode> Roots { get; } = new();
+
+    public SessionArtifactIndex Artifacts { get; }
+
+    [ObservableProperty]
+    private GeneratorNode? _activeNode;
+
+    public GenerationSession()
+    {
+        Artifacts = new SessionArtifactIndex(this);
+    }
+
+    public IEnumerable<GeneratorNode> Traverse()
+    {
+        foreach (var root in Roots)
+        {
+            foreach (var node in root.Traverse())
+            {
+                yield return node;
+            }
+        }
+    }
+
+    public GeneratorNode? FindNode(Guid id)
+    {
+        return Traverse().FirstOrDefault(x => x.Id == id);
+    }
+}

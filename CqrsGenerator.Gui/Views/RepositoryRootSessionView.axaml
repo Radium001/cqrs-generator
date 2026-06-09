@@ -20,16 +20,11 @@
                        FontWeight="SemiBold" />
             <shared:WrappedListPicker Grid.Row="1"
                                       DataContext="{Binding EntityPicker}" />
-            <StackPanel Grid.Row="2"
-                        Orientation="Horizontal"
-                        Spacing="8">
-              <Button Content="Create Entity"
-                      Command="{Binding OpenCreateEntityCommand}"
-                      IsVisible="{Binding ShowCreateEntityButton}" />
-              <Grid IsVisible="{Binding HasCustomEntity}">
-                <shared:ItemChip DataContext="{Binding CustomEntityChip}" />
-              </Grid>
-            </StackPanel>
+            <Button Grid.Row="2"
+                    Content="Create Entity"
+                    Command="{Binding OpenCreateEntityCommand}"
+                    HorizontalAlignment="Left"
+                    IsVisible="{Binding ShowCreateEntityButton}" />
           </Grid>
 
           <Grid Grid.Column="1"

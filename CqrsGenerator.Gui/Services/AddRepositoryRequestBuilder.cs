@@ -14,13 +14,9 @@ public sealed class AddRepositoryRequestBuilder : IAddRepositoryRequestBuilder
         try
         {
             var customEntity = formState.CustomEntity;
-            var normalizedSubfolder = customEntity is null
-                ? null
-                : CSharpNameValidator.NormalizeOptionalRelativePath(customEntity.Subfolder, nameof(customEntity.Subfolder));
-            var entityName = customEntity?.EntityName ?? formState.ExistingEntityName;
-            var entityNamespace = customEntity is not null
-                ? normalizedSubfolder is null ? GeneratorConstants.DomainEntitiesNamespace : $"{GeneratorConstants.DomainEntitiesNamespace}.{normalizedSubfolder.Replace('/', '.')}"
-                : formState.ExistingEntityNamespace;
+            var normalizedSubfolder = null as string;
+            var entityName = formState.ExistingEntityName;
+            var entityNamespace = formState.ExistingEntityNamespace;
 
             if (string.IsNullOrWhiteSpace(entityName) || string.IsNullOrWhiteSpace(entityNamespace))
             {
@@ -55,7 +51,7 @@ public sealed class AddRepositoryRequestBuilder : IAddRepositoryRequestBuilder
 
             if (customEntity is not null)
             {
-                foreach (var property in customEntity.Properties)
+                foreach (var property in Enumerable.Empty<PropertySpec>())
                 {
                     CSharpNameValidator.EnsureIdentifier(property.Name.Trim(), nameof(property.Name));
                 }
@@ -65,14 +61,14 @@ public sealed class AddRepositoryRequestBuilder : IAddRepositoryRequestBuilder
                 new AddRepositoryScenarioWorkflowRequest(
                     entityName.Trim(),
                     entityNamespace.Trim(),
-                    CreateEntity: customEntity is not null,
-                    normalizedSubfolder,
-                    customEntity?.Properties ?? [],
-                    customEntity?.GenerateFactoryMethod ?? false,
-                    customEntity?.GenerateEfMapping ?? false,
-                    customEntity?.GenerateInterface ?? false,
-                    customEntity?.DomainMethods ?? [],
-                    customEntity?.EfMappingFields,
+                    CreateEntity: false,
+                    null,
+                    [],
+                    false,
+                    false,
+                    false,
+                    [],
+                    null,
                     formState.AddDependencyInjectionRegistration,
                     presetMethods.Concat(customMethods).ToArray()));
         }

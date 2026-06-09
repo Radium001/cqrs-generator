@@ -6,25 +6,27 @@ using CqrsGenerator.Core.Generation;
 using CqrsGenerator.Gui.Collections;
 using CqrsGenerator.Gui.Models;
 using CqrsGenerator.Gui.Services;
+using CqrsGenerator.Gui.Session;
+using CqrsGenerator.Gui.Session.States;
 
 namespace CqrsGenerator.Gui.ViewModels.Generators;
 
-public sealed partial class CommandRootSessionViewModel : ObservableObject, IPlanBuildingRootSessionViewModel, IWorkspaceAwareGeneratorSessionViewModel
+public sealed partial class CommandRootSessionViewModel : ObservableObject,
+    IPlanBuildingRootSessionViewModel,
+    IWorkspaceAwareGeneratorSessionViewModel,
+    IGeneratorNodeEditorViewModel
 {
-    private readonly IEmbeddedSessionHost _embeddedSessionHost;
     private readonly IAddCommandPlanService _planService;
     private readonly IAddCommandScenarioOutlineBuilder _scenarioOutlineBuilder;
-    private readonly IAddRepositoryPlanService _repositoryPlanService;
-    private readonly IAddRepositoryScenarioOutlineBuilder _repositoryScenarioOutlineBuilder;
-    private readonly IAddEntityPlanService _entityPlanService;
-    private readonly IAddEntityScenarioOutlineBuilder _entityScenarioOutlineBuilder;
-    private readonly EfEntityPreparationService _efEntityPreparationService;
     private ProjectModel? _projectModel;
     private bool _isSyncingFeature;
     private bool _isSyncingCommandName;
-    private readonly List<NewRepositoryDraft> _repositoryDrafts = [];
-    private readonly SessionArtifactRegistry _artifactRegistry = new();
-    private string? _editingInterfaceName;
+    private readonly CommandGeneratorState? _sessionState;
+    private GenerationSession? _generationSession;
+    private IGenerationSessionNavigator? _navigator;
+
+    private GeneratorNode? _node;
+    public GeneratorNode? Node { get => _node; set => _node = value; }
 
     public CommandRootSessionViewModel(
         GenerationActionDescriptor actionDescriptor,
@@ -35,16 +37,13 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject, IPla
         IAddRepositoryScenarioOutlineBuilder repositoryScenarioOutlineBuilder,
         IAddEntityPlanService entityPlanService,
         IAddEntityScenarioOutlineBuilder entityScenarioOutlineBuilder,
-        EfEntityPreparationService efEntityPreparationService)
+        EfEntityPreparationService efEntityPreparationService,
+        GeneratorNode? node = null)
     {
-        _embeddedSessionHost = embeddedSessionHost;
         _planService = planService;
         _scenarioOutlineBuilder = scenarioOutlineBuilder;
-        _repositoryPlanService = repositoryPlanService;
-        _repositoryScenarioOutlineBuilder = repositoryScenarioOutlineBuilder;
-        _entityPlanService = entityPlanService;
-        _entityScenarioOutlineBuilder = entityScenarioOutlineBuilder;
-        _efEntityPreparationService = efEntityPreparationService;
+        _node = node;
+        _sessionState = node?.State as CommandGeneratorState;
         ActionDescriptor = actionDescriptor;
         SessionId = $"root:{actionDescriptor.ActionId}";
         AvailableFeatures = [];
@@ -90,13 +89,38 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject, IPla
         };
 
         DependencyPicker = new DependencyPickerViewModel();
-        DependencyPicker.CreateRepositoryCommand = new RelayCommand(OpenCreateRepository);
-        DependencyPicker.HasCreateRepository = true;
         DependencyPicker.Picker.SelectionChanged += () =>
         {
             OnPropertyChanged(nameof(HasUnsavedChanges));
             OnPropertyChanged(nameof(CanBuildPlan));
         };
+
+        if (_sessionState is not null)
+        {
+            CommandNameCyclic.Text = _sessionState.CommandName;
+            if (_sessionState.ResponseType is not null)
+            {
+                HasResponseType = true;
+                ResultTypePicker.SearchText = _sessionState.ResponseType;
+            }
+            foreach (var param in _sessionState.Parameters)
+            {
+                Parameters.Add(new PropertyEntryViewModel(param.Type, param.Name));
+            }
+        }
+    }
+
+    public void SetGenerationSession(GenerationSession session, IGenerationSessionNavigator navigator)
+    {
+        _generationSession = session;
+        _navigator = navigator;
+        if (_node is null)
+        {
+            var state = new CommandGeneratorState { CommandName = "Create" };
+            _node = navigator.CreateRoot(GeneratorNodeKind.Command, state);
+        }
+        DependencyPicker.CreateRepositoryCommand = new RelayCommand(OpenCreateRepository, () => Node is not null);
+        DependencyPicker.HasCreateRepository = true;
     }
 
     public WrappedListPickerViewModel FeaturePicker { get; }
@@ -125,8 +149,7 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject, IPla
         Parameters.Count > 0 ||
         !HasResponseType ||
         !UpdateWebImports ||
-        DependencyPicker.GetSelected().Count > 0 ||
-        _repositoryDrafts.Count > 0;
+        DependencyPicker.GetSelected().Count > 0;
 
     public bool CanClose => true;
 
@@ -165,15 +188,17 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject, IPla
         ReloadProject(workspaceContext?.ProjectModel);
     }
 
-    public IReadOnlyList<ScenarioNodeViewModel> GetScenarioNodes() => _scenarioOutlineBuilder.Build(CreateFormState());
+    public IReadOnlyList<ScenarioNodeViewModel> GetScenarioNodes()
+    {
+        if (Node is null) return [];
+        return ScenarioOutlineProjector.Project(Node);
+    }
 
     public GenerationPlan BuildPlan(ProjectWorkspaceContext workspaceContext)
     {
         ArgumentNullException.ThrowIfNull(workspaceContext);
         return _planService.BuildPlan(workspaceContext, CreateFormState());
     }
-
-    private string? _previousFeaturePath;
 
     partial void OnSelectedFeatureChanged(FeatureItemViewModel? value)
     {
@@ -191,16 +216,9 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject, IPla
         {
             ResultTypeItems.SetDiscovered([]);
             ResultTypePicker.RawItems = ResultTypeItems;
-            DependencyPicker.SetDiscovered([]);
+            DependencyPicker.SetDiscovered(Array.Empty<RepositoryInfo>());
             return;
         }
-
-        if (_previousFeaturePath is not null &&
-            !string.Equals(_previousFeaturePath, value.RelativePath, StringComparison.OrdinalIgnoreCase))
-        {
-            _artifactRegistry.ClearFeatureArtifacts();
-        }
-        _previousFeaturePath = value.RelativePath;
 
         var discoveredDtos = _projectModel.Dtos
             .Where(dto => string.Equals(dto.FeaturePath, value.RelativePath, StringComparison.OrdinalIgnoreCase))
@@ -208,11 +226,15 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject, IPla
             .Select(dto => new DtoItemViewModel(dto.Name, dto.DisplayName, dto.Namespace))
             .ToList();
 
-        foreach (var regDto in _artifactRegistry.DtoInfos)
+        if (_generationSession is not null)
         {
-            if (!discoveredDtos.Any(d => d.Name == regDto.Name))
+            var sessionDtos = _generationSession.Artifacts.GetDtos(value.RelativePath);
+            foreach (var sessionDto in sessionDtos)
             {
-                discoveredDtos.Add(new DtoItemViewModel(regDto.Name, regDto.DisplayName, regDto.Namespace));
+                if (!discoveredDtos.Any(d => d.Name == sessionDto.Name))
+                {
+                    discoveredDtos.Add(new DtoItemViewModel(sessionDto.Name, sessionDto.Name, string.Empty));
+                }
             }
         }
 
@@ -232,10 +254,13 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject, IPla
             CommandNameCyclic.Text = value;
             _isSyncingCommandName = false;
         }
+
+        SyncToSessionState();
     }
 
     partial void OnHasResponseTypeChanged(bool value)
     {
+        SyncToSessionState();
         OnPropertyChanged(nameof(CanBuildPlan));
         OnPropertyChanged(nameof(HasUnsavedChanges));
     }
@@ -244,9 +269,6 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject, IPla
     {
         _projectModel = project;
         var previousFeaturePath = SelectedFeature?.RelativePath;
-        _previousFeaturePath = null;
-        _artifactRegistry.ClearFeatureArtifacts();
-        _repositoryDrafts.Clear();
         DependencyPicker.Picker.ClearRuntime();
 
         AvailableFeatures.Clear();
@@ -318,7 +340,24 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject, IPla
             or nameof(WrappedListPickerViewModel.SearchText)
             or nameof(WrappedListPickerViewModel.SelectedBaseName))
         {
+            SyncToSessionState();
             OnPropertyChanged(nameof(CanBuildPlan));
+        }
+    }
+
+    private void SyncToSessionState()
+    {
+        if (_sessionState is null) return;
+        _sessionState.CommandName = CommandName.Trim();
+        _sessionState.ResponseType = HasResponseType ? GetDtoTypeName() : null;
+        _sessionState.Parameters.Clear();
+        foreach (var p in Parameters.Where(p => !string.IsNullOrWhiteSpace(p.Type) && !string.IsNullOrWhiteSpace(p.Name)))
+        {
+            _sessionState.Parameters.Add(new PropertySpec(p.Type.Trim(), p.Name.Trim()));
+        }
+        if (SelectedFeature is not null)
+        {
+            _sessionState.FeaturePath = SelectedFeature.RelativePath;
         }
     }
 
@@ -334,7 +373,7 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject, IPla
                 .Select(parameter => new PropertySpec(parameter.Type.Trim(), parameter.Name.Trim()))
                 .ToArray(),
             DependencyPicker.GetSelected(),
-            _repositoryDrafts.ToArray(),
+            Array.Empty<object>(),
             UpdateWebImports);
     }
 
@@ -346,6 +385,7 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject, IPla
     private void AddParameter()
     {
         Parameters.Add(new PropertyEntryViewModel("string", $"param{Parameters.Count + 1}"));
+        SyncToSessionState();
         OnPropertyChanged(nameof(CanBuildPlan));
     }
 
@@ -357,74 +397,15 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject, IPla
         }
 
         Parameters.Remove(parameter);
+        SyncToSessionState();
         OnPropertyChanged(nameof(CanBuildPlan));
     }
 
     private void OpenCreateRepository()
     {
-        var session = new RepositoryRootSessionViewModel(
-            actionDescriptor: null,
-            _repositoryPlanService,
-            _embeddedSessionHost,
-            _repositoryScenarioOutlineBuilder,
-            _entityPlanService,
-            _entityScenarioOutlineBuilder,
-            _efEntityPreparationService,
-            isStandalone: false,
-            artifactRegistry: _artifactRegistry);
-        _embeddedSessionHost.Open(session, FinishRepositoryDraft);
-    }
-
-    private void FinishRepositoryDraft(NewRepositoryDraft draft)
-    {
-        var removeName = _editingInterfaceName ?? draft.InterfaceName;
-        _repositoryDrafts.RemoveAll(existing => string.Equals(existing.InterfaceName, removeName, StringComparison.Ordinal));
-        _repositoryDrafts.Add(draft);
-        _editingInterfaceName = null;
-
-        if (!string.Equals(removeName, draft.InterfaceName, StringComparison.Ordinal))
-        {
-            DependencyPicker.Picker.RemoveRuntime(new CommandDependencyOption(removeName));
-        }
-
-        DependencyPicker.AddGeneratedDependency(
-            draft.InterfaceName,
-            isSelected: true,
-            onEdit: _ => EditRepositoryDraft(draft.InterfaceName),
-            onRemove: _ => RemoveRepositoryDraft(draft.InterfaceName));
-
-        OnPropertyChanged(nameof(HasUnsavedChanges));
-        OnPropertyChanged(nameof(CanBuildPlan));
-    }
-
-    private void EditRepositoryDraft(string interfaceName)
-    {
-        var existing = _repositoryDrafts.FirstOrDefault(draft => string.Equals(draft.InterfaceName, interfaceName, StringComparison.Ordinal));
-        if (existing is null)
-        {
-            return;
-        }
-
-        _editingInterfaceName = interfaceName;
-
-        var session = new RepositoryRootSessionViewModel(
-            actionDescriptor: null,
-            _repositoryPlanService,
-            _embeddedSessionHost,
-            _repositoryScenarioOutlineBuilder,
-            _entityPlanService,
-            _entityScenarioOutlineBuilder,
-            _efEntityPreparationService,
-            isStandalone: false,
-            existing,
-            _artifactRegistry);
-        _embeddedSessionHost.Open(session, FinishRepositoryDraft);
-    }
-
-    private void RemoveRepositoryDraft(string interfaceName)
-    {
-        _repositoryDrafts.RemoveAll(draft => string.Equals(draft.InterfaceName, interfaceName, StringComparison.Ordinal));
-        OnPropertyChanged(nameof(HasUnsavedChanges));
-        OnPropertyChanged(nameof(CanBuildPlan));
+        if (Node is null || _navigator is null) return;
+        var state = new RepositoryGeneratorState { InterfaceName = "IRepository" };
+        var child = _navigator.CreateChild(Node, GeneratorNodeKind.Repository, state);
+        _navigator.OpenNode(child.Id);
     }
 }

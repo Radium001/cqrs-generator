@@ -6,25 +6,30 @@ using CqrsGenerator.Core.Discovery;
 using CqrsGenerator.Core.Generation;
 using CqrsGenerator.Gui.Models;
 using CqrsGenerator.Gui.Services;
+using CqrsGenerator.Gui.Session;
+using CqrsGenerator.Gui.Session.States;
 using CqrsGenerator.Gui.ViewModels;
 
 namespace CqrsGenerator.Gui.ViewModels.Generators;
 
 public sealed partial class EntityRootSessionViewModel : ObservableObject,
     IPlanBuildingRootSessionViewModel,
-    IEmbeddedGeneratorSessionViewModel<NewEntityDraft>,
-    IWorkspaceAwareGeneratorSessionViewModel
+    IWorkspaceAwareGeneratorSessionViewModel,
+    IGeneratorNodeEditorViewModel
 {
     private readonly GenerationActionDescriptor? _actionDescriptor;
     private readonly IAddEntityPlanService _planService;
     private readonly IAddEntityScenarioOutlineBuilder _scenarioOutlineBuilder;
     private readonly EfEntityPreparationService _efEntityPreparationService;
     private readonly bool _isStandalone;
+    private readonly EntityGeneratorState? _sessionState;
     private readonly Dictionary<string, EfEntityCandidate> _efEntityByName = new(StringComparer.Ordinal);
     private ProjectModel? _projectModel;
     private bool _isSyncingName;
     private bool _isApplyingSuggestedEntityName;
     private bool _hasManualEntityNameOverride;
+
+    public GeneratorNode? Node { get; set; }
 
     public EntityRootSessionViewModel(
         GenerationActionDescriptor? actionDescriptor,
@@ -32,13 +37,15 @@ public sealed partial class EntityRootSessionViewModel : ObservableObject,
         IAddEntityScenarioOutlineBuilder scenarioOutlineBuilder,
         EfEntityPreparationService efEntityPreparationService,
         bool isStandalone,
-        NewEntityDraft? existingDraft = null)
+        GeneratorNode? node = null)
     {
         _actionDescriptor = actionDescriptor;
         _planService = planService;
         _scenarioOutlineBuilder = scenarioOutlineBuilder;
         _efEntityPreparationService = efEntityPreparationService;
         _isStandalone = isStandalone;
+        Node = node;
+        _sessionState = node?.State as EntityGeneratorState;
 
         SessionId = isStandalone
             ? $"root:add-entity:{Guid.NewGuid():N}"
@@ -84,30 +91,13 @@ public sealed partial class EntityRootSessionViewModel : ObservableObject,
             "string",
             "Property1");
 
-        if (existingDraft is not null)
+        if (_sessionState is not null)
         {
-            SelectedSourceMode = existingDraft.SourceMode;
-            EntityNameCyclic.Text = existingDraft.EntityName;
-            RenameEfIdentifierProperties = existingDraft.RenameEfIdentifierProperties;
-            GenerateFactoryMethod = existingDraft.GenerateFactoryMethod;
-            GenerateEfMapping = existingDraft.GenerateEfMapping;
-            _hasManualEntityNameOverride =
-                existingDraft.SourceMode == EntitySourceMode.EfEntity &&
-                !string.IsNullOrWhiteSpace(existingDraft.SelectedEfEntityName) &&
-                !string.Equals(existingDraft.EntityName, existingDraft.SelectedEfEntityName, StringComparison.Ordinal);
-
-            foreach (var property in existingDraft.ManualProperties)
+            EntityNameCyclic.Text = _sessionState.EntityName;
+            foreach (var property in _sessionState.Properties)
             {
                 AddProperty(property.Type, property.Name);
             }
-
-            if (!string.IsNullOrWhiteSpace(existingDraft.Subfolder))
-            {
-                SubfolderPicker.SearchText = existingDraft.Subfolder;
-            }
-
-            _pendingEfEntityName = existingDraft.SelectedEfEntityName;
-            _pendingEfPropertyNames = existingDraft.SelectedEfPropertyNames.ToArray();
         }
         else
         {
@@ -215,7 +205,11 @@ public sealed partial class EntityRootSessionViewModel : ObservableObject,
         set => SelectedSourceMode = value ? EntitySourceMode.EfEntity : EntitySourceMode.Manual;
     }
 
-    public IReadOnlyList<ScenarioNodeViewModel> GetScenarioNodes() => _scenarioOutlineBuilder.Build(CreateFormState());
+    public IReadOnlyList<ScenarioNodeViewModel> GetScenarioNodes()
+    {
+        if (Node is null) return [];
+        return ScenarioOutlineProjector.Project(Node);
+    }
 
     public void UpdateWorkspace(ProjectWorkspaceContext? workspaceContext)
     {
@@ -276,29 +270,6 @@ public sealed partial class EntityRootSessionViewModel : ObservableObject,
         return _planService.BuildPlan(workspaceContext, CreateFormState());
     }
 
-    public NewEntityDraft BuildDraft()
-    {
-        var prepared = BuildFinalPropertiesAndMappings();
-
-        return new NewEntityDraft(
-            SelectedSourceMode,
-            EntityName.Trim(),
-            SelectedEfEntity?.Name,
-            EfPropertyPicker.SelectedKeys.ToArray(),
-            RenameEfIdentifierProperties,
-            GetSubfolder(),
-            ManualProperties
-                .Where(property => property.IsComplete)
-                .Select(property => new PropertySpec(property.Type.Trim(), property.Name.Trim()))
-                .ToArray(),
-            prepared.Properties,
-            GenerateFactoryMethod,
-            GenerateEfMapping,
-            false,
-            [],
-            SelectedSourceMode == EntitySourceMode.EfEntity ? prepared.EfMappingFields : null);
-    }
-
     partial void OnSelectedSourceModeChanged(EntitySourceMode value)
     {
         OnPropertyChanged(nameof(IsEfEntityMode));
@@ -357,6 +328,7 @@ public sealed partial class EntityRootSessionViewModel : ObservableObject,
             _isSyncingName = false;
         }
 
+        SyncToSessionState();
         OnPropertyChanged(nameof(CanBuildPlan));
         OnPropertyChanged(nameof(CanComplete));
         OnPropertyChanged(nameof(HasUnsavedChanges));
@@ -408,6 +380,7 @@ public sealed partial class EntityRootSessionViewModel : ObservableObject,
         var property = new PropertyEntryViewModel(type, name);
         property.PropertyChanged += OnManualPropertyChanged;
         ManualProperties.Add(property);
+        SyncToSessionState();
         OnPropertyChanged(nameof(CanBuildPlan));
         OnPropertyChanged(nameof(CanComplete));
         OnPropertyChanged(nameof(HasUnsavedChanges));
@@ -422,6 +395,7 @@ public sealed partial class EntityRootSessionViewModel : ObservableObject,
 
         property.PropertyChanged -= OnManualPropertyChanged;
         ManualProperties.Remove(property);
+        SyncToSessionState();
         OnPropertyChanged(nameof(CanBuildPlan));
         OnPropertyChanged(nameof(CanComplete));
         OnPropertyChanged(nameof(HasUnsavedChanges));
@@ -431,9 +405,21 @@ public sealed partial class EntityRootSessionViewModel : ObservableObject,
     {
         if (e.PropertyName is nameof(PropertyEntryViewModel.Type) or nameof(PropertyEntryViewModel.Name))
         {
+            SyncToSessionState();
             OnPropertyChanged(nameof(CanBuildPlan));
             OnPropertyChanged(nameof(CanComplete));
             OnPropertyChanged(nameof(HasUnsavedChanges));
+        }
+    }
+
+    private void SyncToSessionState()
+    {
+        if (_sessionState is null) return;
+        _sessionState.EntityName = EntityName.Trim();
+        _sessionState.Properties.Clear();
+        foreach (var p in ManualProperties.Where(p => p.IsComplete))
+        {
+            _sessionState.Properties.Add(new PropertySpec(p.Type.Trim(), p.Name.Trim()));
         }
     }
 

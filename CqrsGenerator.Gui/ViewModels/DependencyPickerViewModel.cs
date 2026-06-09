@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.Input;
 using CqrsGenerator.Core.Discovery;
 using CqrsGenerator.Core.Generation;
 using CqrsGenerator.Gui.Models;
+using CqrsGenerator.Gui.Session;
 
 namespace CqrsGenerator.Gui.ViewModels;
 
@@ -36,6 +37,23 @@ public sealed partial class DependencyPickerViewModel : ObservableObject
 
         foreach (var repo in repos.OrderBy(r => r.InterfaceName, StringComparer.OrdinalIgnoreCase))
             items.Add(new CommandDependencyOption(repo.InterfaceName));
+
+        Picker.SetDiscovered(items);
+    }
+
+    public void SetDiscovered(IEnumerable<AvailableArtifactItem> artifacts)
+    {
+        var items = new List<object>();
+
+        foreach (var dep in StandardDeps)
+            items.Add(new CommandDependencyOption(dep));
+
+        foreach (var artifact in artifacts
+            .Where(a => a.Kind == GeneratorNodeKind.Repository)
+            .OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            items.Add(new CommandDependencyOption(artifact.Name, artifact.IsFromSession));
+        }
 
         Picker.SetDiscovered(items);
     }

@@ -9,9 +9,7 @@ public sealed class AddRepositoryScenarioOutlineBuilder : IAddRepositoryScenario
     {
         ArgumentNullException.ThrowIfNull(formState);
 
-        var entityTitle = formState.CustomEntity is not null
-            ? $"{formState.CustomEntity.EntityName.Trim()} (new)"
-            : formState.ExistingEntityDisplayName ?? "Select an entity";
+        var entityTitle = formState.ExistingEntityDisplayName ?? "Select an entity";
 
         var methodsCount = formState.SelectedMethodPresetKeys.Count + formState.CustomMethods.Count;
 

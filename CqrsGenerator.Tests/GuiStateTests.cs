@@ -9,6 +9,8 @@ using CqrsGenerator.Core.Workflows;
 using CqrsGenerator.Gui.Models;
 using CqrsGenerator.Gui.Services;
 using CqrsGenerator.Gui.Services.Generators;
+using CqrsGenerator.Gui.Session;
+using CqrsGenerator.Gui.Session.States;
 using CqrsGenerator.Gui.ViewModels;
 using CqrsGenerator.Gui.ViewModels.Generators;
 using CqrsGenerator.Gui.Views;
@@ -17,33 +19,6 @@ namespace CqrsGenerator.Tests;
 
 public partial class GuiStateTests
 {
-    [Fact]
-    public void EmbeddedCompletionReactivity_UpdatesWithoutManualRefresh()
-    {
-        var workspaceStore = new WorkspaceStore();
-        var stack = new GeneratorStackViewModel(workspaceStore);
-        var rootSession = new TestRootSession();
-
-        stack.OpenRoot(rootSession);
-
-        var embedded = new DtoRootSessionViewModel(
-            actionDescriptor: null,
-            new StubAddDtoPlanService(),
-            new StubEmbeddedSessionHost(),
-            new AddDtoScenarioOutlineBuilder(),
-            isStandalone: false);
-        stack.Open<NewDtoDraft>(embedded, _ => { });
-
-        Assert.False(stack.CanCompleteEmbedded);
-
-        embedded.DtoNameCyclic.Text = "UserDetails";
-        embedded.DtoNameCyclic.SelectedIndex = 1;
-
-        Assert.True(embedded.CanComplete);
-        Assert.True(stack.CanCompleteEmbedded);
-        Assert.True(stack.CompleteEmbeddedCommand.CanExecute(null));
-    }
-
     [Fact]
     public void AddQuery_RemoveParameterCommand_RemovesSpecificEntry()
     {
@@ -97,7 +72,8 @@ public partial class GuiStateTests
     public void RootSessionChanged_FiresOnlyWhenRootIdentityChanges()
     {
         var workspaceStore = CreateWorkspaceStore(Path.GetTempPath());
-        var stack = new GeneratorStackViewModel(workspaceStore);
+        var (session_s2, navigator_s2) = CreateSessionAndNavigator();
+        var stack = new GeneratorStackViewModel(workspaceStore, session_s2, navigator_s2, CreateEmptyDefinitionCatalog(), new StubServiceProvider());
         var rootSession = new TestMutableRootSession();
         var rootSessionChangedCount = 0;
 
@@ -118,7 +94,8 @@ public partial class GuiStateTests
     public void WorkspaceCapabilityUpdate_DoesNotReloadWorkspaceAwareRootSession()
     {
         var workspaceStore = CreateWorkspaceStore(Path.GetTempPath());
-        var stack = new GeneratorStackViewModel(workspaceStore);
+        var (session_s3, navigator_s3) = CreateSessionAndNavigator();
+        var stack = new GeneratorStackViewModel(workspaceStore, session_s3, navigator_s3, CreateEmptyDefinitionCatalog(), new StubServiceProvider());
         var rootSession = new TrackingWorkspaceAwareRootSession();
 
         stack.OpenRoot(rootSession);
@@ -250,7 +227,8 @@ public partial class GuiStateTests
         var coordinator = CreateCoordinator();
         var sessionService = CreateSessionService(workspaceStore, coordinator, warningService);
         var generatorCatalog = CreateGeneratorCatalog();
-        var generatorHost = new GeneratorHostViewModel(workspaceStore, generatorCatalog, sessionService);
+        var (session1, navigator1) = CreateSessionAndNavigator();
+        var generatorHost = new GeneratorHostViewModel(workspaceStore, generatorCatalog, sessionService, session1, navigator1, CreateEmptyDefinitionCatalog(), new StubServiceProvider());
         var mainWindow = new MainWindowViewModel(
             new StubThemeService(),
             workspaceStore,
@@ -291,7 +269,8 @@ public partial class GuiStateTests
             new StubWorkspaceApplyService(),
             warningService);
         var generatorCatalog = CreateGeneratorCatalog();
-        var generatorHost = new GeneratorHostViewModel(workspaceStore, generatorCatalog, sessionService);
+        var (session2, navigator2) = CreateSessionAndNavigator();
+        var generatorHost = new GeneratorHostViewModel(workspaceStore, generatorCatalog, sessionService, session2, navigator2, CreateEmptyDefinitionCatalog(), new StubServiceProvider());
         var mainWindow = new MainWindowViewModel(
             new StubThemeService(),
             workspaceStore,
@@ -575,7 +554,8 @@ public partial class GuiStateTests
             CreateProjectModel(tmp.Root));
         var workspaceStore = CreateWorkspaceStore(tmp.Root);
         var sessionService = CreateSessionService(workspaceStore);
-        var generatorHost = new GeneratorHostViewModel(workspaceStore, CreateGeneratorCatalog(), sessionService);
+        var (session3, navigator3) = CreateSessionAndNavigator();
+        var generatorHost = new GeneratorHostViewModel(workspaceStore, CreateGeneratorCatalog(), sessionService, session3, navigator3, CreateEmptyDefinitionCatalog(), new StubServiceProvider());
         var mainWindow = new MainWindowViewModel(
             new StubThemeService(),
             workspaceStore,
@@ -1136,6 +1116,23 @@ public partial class GuiStateTests
         return new ArchitectureWarningService(new ArchitectureRuleSet([new SingleQueryServicePerFeatureRule()]));
     }
 
+    private static (GenerationSession Session, IGenerationSessionNavigator Navigator) CreateSessionAndNavigator()
+    {
+        var session = new GenerationSession();
+        var navigator = new GenerationSessionNavigator(session);
+        return (session, navigator);
+    }
+
+    private static GeneratorDefinitionCatalog CreateEmptyDefinitionCatalog()
+    {
+        return new GeneratorDefinitionCatalog([]);
+    }
+
+    private sealed class StubServiceProvider : IServiceProvider
+    {
+        public object? GetService(Type serviceType) => null;
+    }
+
     private static WorkspaceGenerationCoordinator CreateCoordinator()
     {
         return new WorkspaceGenerationCoordinator(
@@ -1402,9 +1399,6 @@ public partial class GuiStateTests
 
     private sealed class StubEmbeddedSessionHost : IEmbeddedSessionHost
     {
-        public void Open<TDraft>(IEmbeddedGeneratorSessionViewModel<TDraft> session, Action<TDraft> onCompleted)
-        {
-        }
     }
 
     private sealed partial class TestRootSession : ObservableObject, IRootGeneratorSessionViewModel
@@ -1781,8 +1775,14 @@ public partial class GuiStateTests
     }
 
     [Fact]
-    public void CommandRootSession_ScenarioOutline_DoesNotExposeCustomDtoStep()
+    public void CommandRootSession_ScenarioOutline_ReflectsSessionGraph()
     {
+        var (genSession, navigator) = CreateSessionAndNavigator();
+        var commandNode = navigator.CreateRoot(GeneratorNodeKind.Command, new CommandGeneratorState
+        {
+            CommandName = "GetUsers",
+        });
+
         var session = new CommandRootSessionViewModel(
             new GenerationActionDescriptor("add-command", "Add Command", "Application", "Ready", true),
             new StubEmbeddedSessionHost(),
@@ -1792,12 +1792,15 @@ public partial class GuiStateTests
             new AddRepositoryScenarioOutlineBuilder(),
             new StubAddEntityPlanService(),
             new AddEntityScenarioOutlineBuilder(),
-            new EfEntityPreparationService());
+            new EfEntityPreparationService(),
+            node: commandNode);
 
         var nodes = session.GetScenarioNodes();
 
-        Assert.DoesNotContain(nodes, node => node.Title.Contains("DTO", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains(nodes, node => node.Title == "Dependencies");
+        Assert.Single(nodes);
+        Assert.Equal("Command", nodes[0].Title);
+        Assert.Equal("Command", nodes[0].Summary);
+        Assert.Empty(nodes[0].Children);
     }
 
     [Fact]
@@ -1881,7 +1884,7 @@ public partial class GuiStateTests
     }
 
     [Fact]
-    public void EntityRootSession_BuildDraft_DisablesInterfaceAndDomainMethodsForGui()
+    public void EntityRootSession_DisablesInterfaceAndDomainMethodsForGui()
     {
         var session = CreateEntitySession();
         session.EntityNameCyclic.Text = "Customer";
@@ -1890,10 +1893,7 @@ public partial class GuiStateTests
         session.GenerateFactoryMethod = true;
         session.GenerateEfMapping = true;
 
-        var draft = session.BuildDraft();
-
-        Assert.False(draft.GenerateInterface);
-        Assert.Empty(draft.DomainMethods);
+        Assert.True(session.CanComplete);
     }
 
     private static EntityRootSessionViewModel CreateEntitySession()

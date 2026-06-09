@@ -23,17 +23,11 @@
             <shared:WrappedListPicker Grid.Row="1"
                                       DataContext="{Binding FeaturePicker}"
                                       HorizontalAlignment="Stretch" />
-            <StackPanel Grid.Row="2"
-                        Orientation="Horizontal"
-                        Spacing="8">
-              <Button Content="Create Feature"
-                      Command="{Binding OpenCreateFeatureCommand}"
-                      HorizontalAlignment="Left"
-                      IsVisible="{Binding ShowCreateFeatureButton}" />
-              <Grid IsVisible="{Binding HasCustomFeature}">
-                <shared:ItemChip DataContext="{Binding CustomFeatureChip}" />
-              </Grid>
-            </StackPanel>
+            <Button Grid.Row="2"
+                    Content="Create Feature"
+                    Command="{Binding OpenCreateFeatureCommand}"
+                    HorizontalAlignment="Left"
+                    IsVisible="{Binding ShowCreateFeatureButton}" />
           </Grid>
 
           <Grid Grid.Column="1"
@@ -71,17 +65,11 @@
                        Foreground="{DynamicResource TextUpdateBrush}"
                        TextWrapping="Wrap"
                        IsVisible="{Binding ShowDtoPromotionHint}" />
-            <StackPanel Grid.Row="3"
-                        Orientation="Horizontal"
-                        Spacing="8">
-              <Button Content="Create DTO"
-                      Command="{Binding OpenCreateDtoCommand}"
-                      HorizontalAlignment="Left"
-                      IsVisible="{Binding ShowCreateDtoButton}" />
-              <Grid IsVisible="{Binding HasCustomDto}">
-                <shared:ItemChip DataContext="{Binding CustomChip}" />
-              </Grid>
-            </StackPanel>
+            <Button Grid.Row="3"
+                    Content="Create DTO"
+                    Command="{Binding OpenCreateDtoCommand}"
+                    HorizontalAlignment="Left"
+                    IsVisible="{Binding ShowCreateDtoButton}" />
           </Grid>
         </Grid>
       </Border>

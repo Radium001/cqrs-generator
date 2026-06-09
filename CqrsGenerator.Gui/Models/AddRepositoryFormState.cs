@@ -6,7 +6,7 @@ public sealed record AddRepositoryFormState(
     string? ExistingEntityDisplayName,
     string? ExistingEntityName,
     string? ExistingEntityNamespace,
-    NewEntityDraft? CustomEntity,
+    object? CustomEntity,
     IReadOnlyList<string> SelectedMethodPresetKeys,
     IReadOnlyList<RepositoryMethodSpec> CustomMethods,
     bool AddDependencyInjectionRegistration);

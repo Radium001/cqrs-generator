@@ -7,14 +7,16 @@ using CqrsGenerator.Core.Generation;
 using CqrsGenerator.Gui.Collections;
 using CqrsGenerator.Gui.Models;
 using CqrsGenerator.Gui.Services;
+using CqrsGenerator.Gui.Session;
+using CqrsGenerator.Gui.Session.States;
 using CqrsGenerator.Gui.ViewModels;
 
 namespace CqrsGenerator.Gui.ViewModels.Generators;
 
 public sealed partial class DtoRootSessionViewModel : ObservableObject,
     IPlanBuildingRootSessionViewModel,
-    IEmbeddedGeneratorSessionViewModel<NewDtoDraft>,
-    IWorkspaceAwareGeneratorSessionViewModel
+    IWorkspaceAwareGeneratorSessionViewModel,
+    IGeneratorNodeEditorViewModel
 {
     private static readonly IReadOnlyList<string> DtoSuffixes = ["", GeneratorConstants.DtoSuffix];
 
@@ -24,9 +26,12 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
     private readonly IAddDtoScenarioOutlineBuilder _scenarioOutlineBuilder;
     private readonly bool _isStandalone;
     private readonly FeatureItemViewModel? _fixedFeature;
+    private readonly DtoGeneratorState? _sessionState;
     private ProjectModel? _projectModel;
     private bool _isSyncingFeature;
     private bool _isSyncingDtoName;
+
+    public GeneratorNode? Node { get; set; }
 
     public DtoRootSessionViewModel(
         GenerationActionDescriptor? actionDescriptor,
@@ -35,7 +40,7 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
         IAddDtoScenarioOutlineBuilder scenarioOutlineBuilder,
         bool isStandalone,
         FeatureItemViewModel? fixedFeature = null,
-        NewDtoDraft? existingDraft = null)
+        GeneratorNode? node = null)
     {
         _actionDescriptor = actionDescriptor;
         _planService = planService;
@@ -43,6 +48,8 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
         _scenarioOutlineBuilder = scenarioOutlineBuilder;
         _isStandalone = isStandalone;
         _fixedFeature = fixedFeature;
+        Node = node;
+        _sessionState = node?.State as DtoGeneratorState;
 
         SessionId = isStandalone
             ? $"root:add-dto:{Guid.NewGuid():N}"
@@ -89,11 +96,11 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
         SubfolderPickerConfiguration.Configure(SubfolderPicker);
         SubfolderPicker.Items = new List<string> { "(root folder)" };
 
-        if (existingDraft is not null)
+        if (_sessionState is not null)
         {
-            DtoNameCyclic.SelectedIndex = existingDraft.SuffixIndex;
-            DtoNameCyclic.Text = existingDraft.BaseName;
-            foreach (var property in existingDraft.Properties)
+            DtoNameCyclic.SelectedIndex = _sessionState.SuffixIndex;
+            DtoNameCyclic.Text = _sessionState.BaseName;
+            foreach (var property in _sessionState.Properties)
             {
                 var propertyViewModel = new PropertyEntryViewModel(property.Type, property.Name);
                 propertyViewModel.PropertyChanged += OnPropertyEntryChanged;
@@ -173,7 +180,11 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
 
     public RuntimeItemCollection<FeatureItemViewModel> AvailableFeatures { get; }
 
-    public IReadOnlyList<ScenarioNodeViewModel> GetScenarioNodes() => _scenarioOutlineBuilder.Build(CreateFormState());
+    public IReadOnlyList<ScenarioNodeViewModel> GetScenarioNodes()
+    {
+        if (Node is null) return [];
+        return ScenarioOutlineProjector.Project(Node);
+    }
 
     public void UpdateWorkspace(ProjectWorkspaceContext? workspaceContext)
     {
@@ -184,17 +195,6 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
     {
         ArgumentNullException.ThrowIfNull(workspaceContext);
         return _planService.BuildPlan(workspaceContext, CreateFormState());
-    }
-
-    public NewDtoDraft BuildDraft()
-    {
-        return new NewDtoDraft(
-            DtoNameCyclic.Text.Trim(),
-            DtoNameCyclic.SelectedIndex,
-            Parameters
-                .Where(property => property.IsComplete)
-                .Select(property => new PropertySpec(property.Type.Trim(), property.Name.Trim()))
-                .ToArray());
     }
 
     partial void OnSelectedFeatureChanged(FeatureItemViewModel? value)
@@ -302,6 +302,7 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
         DtoNameCyclic.Text = value;
         _isSyncingDtoName = false;
 
+        SyncToSessionState();
         OnPropertyChanged(nameof(CanBuildPlan));
         OnPropertyChanged(nameof(CanComplete));
         OnPropertyChanged(nameof(HasUnsavedChanges));
@@ -312,6 +313,7 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
         var property = new PropertyEntryViewModel("string", $"Property{Parameters.Count + 1}");
         property.PropertyChanged += OnPropertyEntryChanged;
         Parameters.Add(property);
+        SyncToSessionState();
     }
 
     private void RemoveParameter(PropertyEntryViewModel? property)
@@ -319,6 +321,7 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
         if (property is null) return;
         property.PropertyChanged -= OnPropertyEntryChanged;
         Parameters.Remove(property);
+        SyncToSessionState();
         OnPropertyChanged(nameof(CanBuildPlan));
         OnPropertyChanged(nameof(CanComplete));
         OnPropertyChanged(nameof(HasUnsavedChanges));
@@ -326,9 +329,22 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
 
     private void OnPropertyEntryChanged(object? sender, PropertyChangedEventArgs e)
     {
+        SyncToSessionState();
         OnPropertyChanged(nameof(CanBuildPlan));
         OnPropertyChanged(nameof(CanComplete));
         OnPropertyChanged(nameof(HasUnsavedChanges));
+    }
+
+    private void SyncToSessionState()
+    {
+        if (_sessionState is null) return;
+        _sessionState.BaseName = DtoNameCyclic.Text.Trim();
+        _sessionState.SuffixIndex = DtoNameCyclic.SelectedIndex;
+        _sessionState.Properties.Clear();
+        foreach (var p in Parameters.Where(p => p.IsComplete))
+        {
+            _sessionState.Properties.Add(new PropertySpec(p.Type.Trim(), p.Name.Trim()));
+        }
     }
 
     private AddDtoFormState CreateFormState()

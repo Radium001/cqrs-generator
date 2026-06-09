@@ -35,21 +35,7 @@ public sealed class AddCommandRequestBuilder : IAddCommandRequestBuilder
                 CSharpNameValidator.EnsureIdentifier(parameter.Name, nameof(parameter.Name));
             }
 
-            var repositoryRequests = formState.RepositoryDrafts
-                .Select(draft => new AddRepositoryScenarioWorkflowRequest(
-                    draft.EntityName,
-                    draft.EntityNamespace,
-                    draft.CreateEntity,
-                    draft.CustomEntity?.Subfolder,
-                    draft.CustomEntity?.Properties ?? [],
-                    draft.CustomEntity?.GenerateFactoryMethod ?? false,
-                    draft.CustomEntity?.GenerateEfMapping ?? false,
-                    draft.CustomEntity?.GenerateInterface ?? false,
-                    draft.CustomEntity?.DomainMethods ?? [],
-                    draft.CustomEntity?.EfMappingFields,
-                    draft.AddDependencyInjectionRegistration,
-                    draft.Methods))
-                .ToArray();
+            var repositoryRequests = Array.Empty<AddRepositoryScenarioWorkflowRequest>();
 
             return AddCommandRequestBuildResult.Success(
                 new AddCommandScenarioWorkflowRequest(

@@ -28,11 +28,11 @@
                     Spacing="8"
                     VerticalAlignment="Top">
           <Button Content="Done"
-                  Command="{Binding Stack.CompleteEmbeddedCommand}"
-                  IsVisible="{Binding HasEmbeddedSession}" />
-          <Button Content="Cancel"
-                  Command="{Binding Stack.CancelEmbeddedCommand}"
-                  IsVisible="{Binding HasEmbeddedSession}" />
+                  Command="{Binding Stack.CompleteChildNodeCommand}"
+                  IsVisible="{Binding HasChildNode}" />
+          <Button Content="Back"
+                  Command="{Binding Stack.NavigateToParentCommand}"
+                  IsVisible="{Binding HasParentNode}" />
           <Button Content="Close"
                   Command="{Binding Stack.CloseRootCommand}"
                   IsVisible="{Binding HasActiveAction}" />

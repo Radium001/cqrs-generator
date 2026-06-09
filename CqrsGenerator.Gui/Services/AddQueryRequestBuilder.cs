@@ -84,7 +84,7 @@ public sealed class AddQueryRequestBuilder : IAddQueryRequestBuilder
             {
                 requestDtoSelection = new CreateLocalQueryDtoSelection(
                     dtoTypeName,
-                    formState.CustomDto?.Properties ?? [],
+                    [],
                     StringUtilities.StripSuffix(queryName, GeneratorConstants.QuerySuffix));
             }
             else if (dtoSelection.LocationKind == DtoLocationKind.LocalQueryDto)

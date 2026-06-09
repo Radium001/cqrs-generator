@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.Input;
 using CqrsGenerator.Core.Discovery;
 using CqrsGenerator.Core.Generation;
 using CqrsGenerator.Gui.Models;
+using CqrsGenerator.Gui.Session;
 
 namespace CqrsGenerator.Gui.ViewModels;
 
@@ -32,6 +33,20 @@ public sealed partial class QueryPickerViewModel : ObservableObject
             _optionsByName[option.Name] = option;
             return option;
         }).ToList();
+
+        Picker.SetDiscovered(options);
+    }
+
+    public void SetDiscovered(IEnumerable<AvailableArtifactItem> artifacts)
+    {
+        var options = new List<QueryOption>();
+
+        foreach (var artifact in artifacts.Where(a => a.Kind == GeneratorNodeKind.Query))
+        {
+            var option = new QueryOption(artifact.Name, StripQuerySuffix(artifact.Name), ResponseShape.Single, artifact.IsFromSession);
+            _optionsByName[option.Name] = option;
+            options.Add(option);
+        }
 
         Picker.SetDiscovered(options);
     }

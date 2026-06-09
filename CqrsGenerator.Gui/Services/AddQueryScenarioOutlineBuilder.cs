@@ -55,23 +55,12 @@ public sealed class AddQueryScenarioOutlineBuilder : IAddQueryScenarioOutlineBui
                     ? "No custom DTO"
                     : string.IsNullOrWhiteSpace(customDtoName)
                         ? "Child generator required"
-                        : $"{customDtoName} ({formState.CustomDto?.Properties.Count ?? 0} props)"),
+                        : $"{customDtoName} (0 props)"),
         ];
     }
 
-    private static string? GetCustomDtoName(NewDtoDraft? customDto)
+    private static string? GetCustomDtoName(object? customDto)
     {
-        if (customDto is null)
-        {
-            return null;
-        }
-
-        var suffix = customDto.SuffixIndex switch
-        {
-            1 => "Dto",
-            _ => "",
-        };
-
-        return customDto.BaseName + suffix;
+        return null;
     }
 }

@@ -4,34 +4,39 @@ using CqrsGenerator.Core.Discovery;
 using CqrsGenerator.Core.Generation;
 using CqrsGenerator.Gui.Models;
 using CqrsGenerator.Gui.Services;
+using CqrsGenerator.Gui.Session;
+using CqrsGenerator.Gui.Session.States;
 
 namespace CqrsGenerator.Gui.ViewModels.Generators;
 
 public sealed partial class CreateFeatureRootSessionViewModel : ObservableObject,
     IPlanBuildingRootSessionViewModel,
-    IEmbeddedGeneratorSessionViewModel<NewFeatureDraft>,
-    IWorkspaceAwareGeneratorSessionViewModel
+    IWorkspaceAwareGeneratorSessionViewModel,
+    IGeneratorNodeEditorViewModel
 {
     private readonly ICreateFeaturePlanService _planService;
     private readonly ICreateFeatureScenarioOutlineBuilder _scenarioOutlineBuilder;
     private readonly GenerationActionDescriptor? _actionDescriptor;
     private readonly bool _isStandalone;
-    private readonly NewFeatureDraft? _existingDraft;
+    private readonly FeatureGeneratorState? _sessionState;
     private ProjectModel? _projectModel;
     private bool _hasNonRootSubfolder;
+
+    public GeneratorNode? Node { get; set; }
 
     public CreateFeatureRootSessionViewModel(
         GenerationActionDescriptor? actionDescriptor,
         ICreateFeaturePlanService planService,
         ICreateFeatureScenarioOutlineBuilder scenarioOutlineBuilder,
         bool isStandalone,
-        NewFeatureDraft? existingDraft = null)
+        GeneratorNode? node = null)
     {
         _planService = planService;
         _scenarioOutlineBuilder = scenarioOutlineBuilder;
         _actionDescriptor = actionDescriptor;
         _isStandalone = isStandalone;
-        _existingDraft = existingDraft;
+        Node = node;
+        _sessionState = node?.State as FeatureGeneratorState;
 
         SessionId = isStandalone
             ? $"root:create-feature:{Guid.NewGuid():N}"
@@ -42,10 +47,10 @@ public sealed partial class CreateFeatureRootSessionViewModel : ObservableObject
         SubfolderPicker.Items = new List<string> { "(root folder)" };
         SubfolderPicker.PropertyChanged += OnSubfolderPickerChanged;
 
-        if (existingDraft is not null)
+        if (_sessionState is not null)
         {
-            FeaturePath = existingDraft.FeatureName;
-            CreateWebFeature = existingDraft.CreateWebFeature;
+            FeaturePath = _sessionState.FeatureName;
+            CreateWebFeature = _sessionState.CreateWebFeature;
         }
 
         StatusText = _isStandalone ? "Configure New Feature." : "Define feature draft.";
@@ -93,9 +98,23 @@ public sealed partial class CreateFeatureRootSessionViewModel : ObservableObject
 
     partial void OnFeaturePathChanged(string value)
     {
+        SyncToSessionState();
         OnPropertyChanged(nameof(CanBuildPlan));
         OnPropertyChanged(nameof(CanComplete));
         OnPropertyChanged(nameof(HasUnsavedChanges));
+    }
+
+    partial void OnCreateWebFeatureChanged(bool value)
+    {
+        SyncToSessionState();
+    }
+
+    private void SyncToSessionState()
+    {
+        if (_sessionState is null) return;
+        _sessionState.FeatureName = FeaturePath?.Trim() ?? string.Empty;
+        _sessionState.CreateWebFeature = CreateWebFeature;
+        _sessionState.Subfolder = GetSelectedSubfolder();
     }
 
     public void UpdateWorkspace(ProjectWorkspaceContext? workspaceContext)
@@ -105,11 +124,8 @@ public sealed partial class CreateFeatureRootSessionViewModel : ObservableObject
 
     public IReadOnlyList<ScenarioNodeViewModel> GetScenarioNodes()
     {
-        var formState = new CreateFeatureFormState(
-            FeaturePath?.Trim(),
-            GetSelectedSubfolder(),
-            CreateWebFeature);
-        return _scenarioOutlineBuilder.Build(formState);
+        if (Node is null) return [];
+        return ScenarioOutlineProjector.Project(Node);
     }
 
     public GenerationPlan BuildPlan(ProjectWorkspaceContext workspaceContext)
@@ -122,14 +138,6 @@ public sealed partial class CreateFeatureRootSessionViewModel : ObservableObject
             CreateWebFeature);
 
         return _planService.BuildPlan(workspaceContext, formState);
-    }
-
-    public NewFeatureDraft BuildDraft()
-    {
-        return new NewFeatureDraft(
-            FeaturePath?.Trim() ?? string.Empty,
-            GetSelectedSubfolder(),
-            CreateWebFeature);
     }
 
     private string? GetSelectedSubfolder()
@@ -171,21 +179,7 @@ public sealed partial class CreateFeatureRootSessionViewModel : ObservableObject
         }
 
         PopulateSubfolderPicker(project);
-        RestoreSubfolderFromDraft();
         StatusText = "Enter a feature name.";
-    }
-
-    private void RestoreSubfolderFromDraft()
-    {
-        var subfolder = _existingDraft?.Subfolder;
-        if (string.IsNullOrWhiteSpace(subfolder))
-            return;
-
-        var item = SubfolderPicker.Items?
-            .OfType<string>()
-            .FirstOrDefault(s => string.Equals(s, subfolder, StringComparison.OrdinalIgnoreCase));
-        if (item is not null)
-            SubfolderPicker.SelectRawItem(item);
     }
 
     private void PopulateSubfolderPicker(ProjectModel project)

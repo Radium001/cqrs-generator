@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using CqrsGenerator.Gui.Session;
 
 namespace CqrsGenerator.Gui.ViewModels;
 
@@ -73,6 +74,16 @@ public sealed partial class MultiSelectListPickerViewModel : ObservableObject
 
         PruneSelections();
         RebuildWrappedItems();
+    }
+
+    public void SetDiscovered(IEnumerable<AvailableArtifactItem> items)
+    {
+        if (ItemNameSelector is null)
+            ItemNameSelector = item => item is AvailableArtifactItem a ? a.Name : item?.ToString() ?? string.Empty;
+        if (ItemKeySelector is null)
+            ItemKeySelector = item => item is AvailableArtifactItem a ? a.Name : item?.ToString() ?? string.Empty;
+
+        SetDiscovered((IEnumerable)items);
     }
 
     public void AddRuntime(object item, bool isSelected = false, bool canEdit = true, bool canRemove = true, Action<object>? onEdit = null, Action<object>? onRemove = null)

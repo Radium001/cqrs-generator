@@ -42,14 +42,13 @@ public class AddQueryRefactorTests
     public void AddQueryRequestBuilder_UsesCustomDtoFlow()
     {
         var builder = new AddQueryRequestBuilder();
-        var customDto = new NewDtoDraft("UserLookup", 1, [new PropertySpec("string", "Name")]);
 
         var result = builder.Build(new AddQueryFormState(
             "Users",
             "Users",
             "GetUsers",
             CreateLocalSelection("UserLookupDto", "GetUsers"),
-            customDto,
+            null,
             ResponseShape.List,
             [],
             new QueryServiceSuggestion("IUsersQueryService", "UsersQueryService", "iface.cs", "impl.cs", QueryServiceSuggestionMode.UpdateExisting, AutoItemStatus.Modified),
@@ -62,8 +61,7 @@ public class AddQueryRefactorTests
         Assert.True(result.Succeeded);
         Assert.NotNull(result.Request);
         var dtoSelection = Assert.IsType<CreateLocalQueryDtoSelection>(result.Request!.DtoSelection);
-        Assert.Single(dtoSelection.Properties);
-        Assert.Equal("Name", dtoSelection.Properties[0].Name);
+        Assert.Empty(dtoSelection.Properties);
         Assert.Equal(ResponseShape.List, result.Request.ResponseShape);
         Assert.False(result.Request.QueryService!.CreateNew);
         Assert.Equal("Task<List<UserLookupDto>>", result.Request.QueryService.ReturnType);

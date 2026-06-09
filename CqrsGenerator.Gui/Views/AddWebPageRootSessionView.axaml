@@ -62,7 +62,13 @@
               BorderBrush="{DynamicResource BorderBrush}"
               BorderThickness="1"
               CornerRadius="6">
-        <shared:QueryPicker DataContext="{Binding QueryPicker}" />
+        <StackPanel Spacing="8">
+          <shared:QueryPicker DataContext="{Binding QueryPicker}" />
+          <Button Content="Create Query"
+                  Command="{Binding OpenCreateQueryCommand}"
+                  HorizontalAlignment="Left"
+                  IsVisible="{Binding ShowCreateQueryButton}" />
+        </StackPanel>
       </Border>
     </StackPanel>
   </ScrollViewer>

@@ -8,27 +8,29 @@ using CqrsGenerator.Core.Generation;
 using CqrsGenerator.Gui.Collections;
 using CqrsGenerator.Gui.Models;
 using CqrsGenerator.Gui.Services;
+using CqrsGenerator.Gui.Session;
+using CqrsGenerator.Gui.Session.States;
 
 namespace CqrsGenerator.Gui.ViewModels.Generators;
 
 public sealed partial class AddWebPageRootSessionViewModel : ObservableObject,
     IPlanBuildingRootSessionViewModel,
-    IWorkspaceAwareGeneratorSessionViewModel
+    IWorkspaceAwareGeneratorSessionViewModel,
+    IGeneratorNodeEditorViewModel
 {
-    private readonly IEmbeddedSessionHost _embeddedSessionHost;
     private readonly IAddWebPagePlanService _webPagePlanService;
-    private readonly IAddQueryPlanService _queryPlanService;
-    private readonly IAddQueryScenarioOutlineBuilder _queryScenarioOutlineBuilder;
-    private readonly IAddWebPageScenarioOutlineBuilder _scenarioOutlineBuilder;
-    private readonly IQueryServiceSuggestionService _queryServiceSuggestionService;
     private ProjectModel? _projectModel;
     private bool _isSyncingFeature;
     private bool _isSyncingPageName;
     private bool _isSyncingRoute;
     private bool _pageNameAutoDerived = true;
     private bool _routeAutoDerived = true;
-    private readonly SessionArtifactRegistry _artifactRegistry = new();
-    private string? _previousFeaturePath;
+    private readonly WebPageGeneratorState? _sessionState;
+    private GenerationSession? _generationSession;
+    private IGenerationSessionNavigator? _navigator;
+
+    private GeneratorNode? _node;
+    public GeneratorNode? Node { get => _node; set => _node = value; }
 
     public AddWebPageRootSessionViewModel(
         GenerationActionDescriptor actionDescriptor,
@@ -37,14 +39,12 @@ public sealed partial class AddWebPageRootSessionViewModel : ObservableObject,
         IAddQueryPlanService queryPlanService,
         IAddQueryScenarioOutlineBuilder queryScenarioOutlineBuilder,
         IAddWebPageScenarioOutlineBuilder scenarioOutlineBuilder,
-        IQueryServiceSuggestionService queryServiceSuggestionService)
+        IQueryServiceSuggestionService queryServiceSuggestionService,
+        GeneratorNode? node = null)
     {
-        _embeddedSessionHost = embeddedSessionHost;
         _webPagePlanService = webPagePlanService;
-        _queryPlanService = queryPlanService;
-        _queryScenarioOutlineBuilder = queryScenarioOutlineBuilder;
-        _scenarioOutlineBuilder = scenarioOutlineBuilder;
-        _queryServiceSuggestionService = queryServiceSuggestionService;
+        _node = node;
+        _sessionState = node?.State as WebPageGeneratorState;
         ActionDescriptor = actionDescriptor;
         SessionId = $"root:{actionDescriptor.ActionId}";
         AvailableWebFeatures = [];
@@ -65,14 +65,31 @@ public sealed partial class AddWebPageRootSessionViewModel : ObservableObject,
         PageNameCyclic.PropertyChanged += OnPageNameCyclicChanged;
 
         QueryPicker = new QueryPickerViewModel();
-        QueryPicker.CreateQueryCommand = new RelayCommand(OpenCreateQuery, () => SelectedFeature is not null);
         QueryPicker.Picker.SelectionChanged += () =>
         {
             OnPropertyChanged(nameof(HasUnsavedChanges));
             OnPropertyChanged(nameof(CanBuildPlan));
         };
+        OpenCreateQueryCommand = new RelayCommand(OpenCreateQuery, () => Node is not null);
+
+        if (_sessionState is not null)
+        {
+            PageNameCyclic.Text = _sessionState.PageName;
+            Route = _sessionState.Route;
+        }
 
         StatusText = "Configure Add Web Page.";
+    }
+
+    public void SetGenerationSession(GenerationSession session, IGenerationSessionNavigator navigator)
+    {
+        _generationSession = session;
+        _navigator = navigator;
+        if (_node is null)
+        {
+            var state = new WebPageGeneratorState { PageName = "NewPage" };
+            _node = navigator.CreateRoot(GeneratorNodeKind.WebPage, state);
+        }
     }
 
     public string SessionId { get; }
@@ -106,6 +123,10 @@ public sealed partial class AddWebPageRootSessionViewModel : ObservableObject,
 
     public QueryPickerViewModel QueryPicker { get; }
 
+    public IRelayCommand OpenCreateQueryCommand { get; }
+
+    public bool ShowCreateQueryButton => Node is not null && _navigator is not null;
+
     [ObservableProperty]
     private FeatureItemViewModel? _selectedFeature;
 
@@ -123,7 +144,11 @@ public sealed partial class AddWebPageRootSessionViewModel : ObservableObject,
         ReloadProject(workspaceContext?.ProjectModel);
     }
 
-    public IReadOnlyList<ScenarioNodeViewModel> GetScenarioNodes() => _scenarioOutlineBuilder.Build(CreateFormState());
+    public IReadOnlyList<ScenarioNodeViewModel> GetScenarioNodes()
+    {
+        if (Node is null) return [];
+        return ScenarioOutlineProjector.Project(Node);
+    }
 
     public GenerationPlan BuildPlan(ProjectWorkspaceContext workspaceContext)
     {
@@ -133,7 +158,7 @@ public sealed partial class AddWebPageRootSessionViewModel : ObservableObject,
 
     partial void OnSelectedFeatureChanged(FeatureItemViewModel? value)
     {
-        QueryPicker.CreateQueryCommand?.NotifyCanExecuteChanged();
+        SyncToSessionState();
         OnPropertyChanged(nameof(CanBuildPlan));
         OnPropertyChanged(nameof(HasUnsavedChanges));
 
@@ -143,14 +168,6 @@ public sealed partial class AddWebPageRootSessionViewModel : ObservableObject,
             FeaturePicker.SelectRawItem(value);
             _isSyncingFeature = false;
         }
-
-        if (value is not null &&
-            _previousFeaturePath is not null &&
-            !string.Equals(_previousFeaturePath, value.RelativePath, StringComparison.OrdinalIgnoreCase))
-        {
-            _artifactRegistry.ClearFeatureArtifacts();
-        }
-        _previousFeaturePath = value?.RelativePath;
 
         if (_routeAutoDerived && value is not null)
         {
@@ -176,20 +193,11 @@ public sealed partial class AddWebPageRootSessionViewModel : ObservableObject,
                     .OrderBy(q => q.Name, StringComparer.OrdinalIgnoreCase)
                     .ToArray();
 
-                var mergedQueries = queries.ToList();
-                foreach (var regQuery in _artifactRegistry.QueryInfos)
-                {
-                    if (!mergedQueries.Any(q => q.Name == regQuery.Name))
-                    {
-                        mergedQueries.Add(regQuery);
-                    }
-                }
-
-                QueryPicker.SetDiscovered(mergedQueries.ToArray());
+                QueryPicker.SetDiscovered(queries);
             }
             else
             {
-                QueryPicker.SetDiscovered([]);
+                QueryPicker.SetDiscovered(Array.Empty<QueryInfo>());
             }
         }
     }
@@ -198,15 +206,25 @@ public sealed partial class AddWebPageRootSessionViewModel : ObservableObject,
     {
         if (_isSyncingRoute) return;
         _routeAutoDerived = false;
+        SyncToSessionState();
         OnPropertyChanged(nameof(HasUnsavedChanges));
+    }
+
+    private void SyncToSessionState()
+    {
+        if (_sessionState is null) return;
+        _sessionState.PageName = PageNameCyclic.FullText;
+        _sessionState.Route = Route;
+        if (SelectedFeature is not null)
+        {
+            _sessionState.FeaturePath = SelectedFeature.RelativePath;
+        }
     }
 
     private void ReloadProject(ProjectModel? project)
     {
         _projectModel = project;
         var previousFeaturePath = SelectedFeature?.RelativePath;
-        _previousFeaturePath = null;
-        _artifactRegistry.ClearFeatureArtifacts();
 
         AvailableWebFeatures.Clear();
 
@@ -270,6 +288,7 @@ public sealed partial class AddWebPageRootSessionViewModel : ObservableObject,
         {
             _pageNameAutoDerived = false;
             _isSyncingPageName = true;
+            SyncToSessionState();
             OnPropertyChanged(nameof(CanBuildPlan));
             OnPropertyChanged(nameof(HasUnsavedChanges));
 
@@ -283,53 +302,6 @@ public sealed partial class AddWebPageRootSessionViewModel : ObservableObject,
 
             _isSyncingPageName = false;
         }
-    }
-
-    private void OpenCreateQuery()
-    {
-        var appFeaturePath = GetAppFeaturePath();
-        if (appFeaturePath is null) return;
-
-        var querySession = new AddQueryRootSessionViewModel(
-            actionDescriptor: null,
-            _embeddedSessionHost,
-            _queryPlanService,
-            null,
-            null,
-            _queryServiceSuggestionService,
-            _queryScenarioOutlineBuilder,
-            fixedFeaturePath: appFeaturePath,
-            artifactRegistry: _artifactRegistry);
-
-        _embeddedSessionHost.Open<AddQueryFormState>(querySession, FinishQuery);
-    }
-
-    private void FinishQuery(AddQueryFormState draft)
-    {
-        if (draft is null) return;
-
-        var queryName = draft.QueryName;
-        var resultTypeName = draft.DtoSelection?.DtoName ?? string.Empty;
-        var shape = draft.ResponseShape;
-
-        _artifactRegistry.PublishQuery(
-            queryName,
-            draft,
-            new QueryInfo(queryName, draft.FeaturePath ?? string.Empty, string.Empty, string.Empty));
-
-        QueryPicker.AddGeneratedQuery(
-            queryName,
-            resultTypeName,
-            shape,
-            onRemove: _ =>
-            {
-                _artifactRegistry.RemoveQuery(queryName);
-                OnPropertyChanged(nameof(CanBuildPlan));
-                OnPropertyChanged(nameof(HasUnsavedChanges));
-            });
-
-        OnPropertyChanged(nameof(CanBuildPlan));
-        OnPropertyChanged(nameof(HasUnsavedChanges));
     }
 
     private string? GetAppFeaturePath()
@@ -347,6 +319,14 @@ public sealed partial class AddWebPageRootSessionViewModel : ObservableObject,
             string.IsNullOrWhiteSpace(Route) ? "/" + SelectedFeature?.Name?.ToLowerInvariant() : Route,
             CreateImports,
             QueryPicker.GetSelected(),
-            _artifactRegistry.QueryDrafts.Values.ToArray());
+            Array.Empty<AddQueryFormState>());
+    }
+
+    private void OpenCreateQuery()
+    {
+        if (Node is null || _navigator is null) return;
+        var state = new QueryGeneratorState { QueryName = "Get" };
+        var child = _navigator.CreateChild(Node, GeneratorNodeKind.Query, state);
+        _navigator.OpenNode(child.Id);
     }
 }

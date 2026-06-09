@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CqrsGenerator.Gui.Services;
 using CqrsGenerator.Gui.Services.Generators;
+using CqrsGenerator.Gui.Session;
 using CqrsGenerator.Gui.ViewModels.Generators;
 
 namespace CqrsGenerator.Gui.ViewModels;
@@ -13,11 +14,15 @@ public sealed class GeneratorHostViewModel : ObservableObject
     public GeneratorHostViewModel(
         IWorkspaceStore workspaceStore,
         IGeneratorCatalog generatorCatalog,
-        IWorkspaceSessionService workspaceSessionService)
+        IWorkspaceSessionService workspaceSessionService,
+        GenerationSession generationSession,
+        IGenerationSessionNavigator navigator,
+        GeneratorDefinitionCatalog definitionCatalog,
+        IServiceProvider serviceProvider)
     {
         _generatorCatalog = generatorCatalog;
         _workspaceSessionService = workspaceSessionService;
-        Stack = new GeneratorStackViewModel(workspaceStore);
+        Stack = new GeneratorStackViewModel(workspaceStore, generationSession, navigator, definitionCatalog, serviceProvider);
         ActionLauncher = new ActionLauncherViewModel(generatorCatalog, workspaceStore, OpenAction);
 
         Stack.PropertyChanged += (_, _) => RaiseStackStateChanged();
@@ -36,13 +41,19 @@ public sealed class GeneratorHostViewModel : ObservableObject
 
     public bool IsLauncherVisible => !HasActiveAction;
 
-    public bool HasEmbeddedSession => Stack.HasEmbeddedSession;
+    public bool HasParentNode => Stack.HasParentNode;
+
+    public bool HasChildNode => Stack.HasChildNode;
 
     public string ActiveBreadcrumbText => Stack.BreadcrumbText;
 
     public string ActiveSessionSummary => Stack.ActiveSessionSummary;
 
     public IGeneratorSessionViewModel? ActiveSession => Stack.ActiveSession;
+
+    public GeneratorNode? ActiveNode => Stack.ActiveNode;
+
+    public bool HasActiveNode => Stack.HasActiveNode;
 
     public event Action<GenerationActionDescriptor?>? SelectedRootActionChanged;
 
@@ -74,9 +85,12 @@ public sealed class GeneratorHostViewModel : ObservableObject
         OnPropertyChanged(nameof(EditorSummary));
         OnPropertyChanged(nameof(HasActiveAction));
         OnPropertyChanged(nameof(IsLauncherVisible));
-        OnPropertyChanged(nameof(HasEmbeddedSession));
+        OnPropertyChanged(nameof(HasParentNode));
+        OnPropertyChanged(nameof(HasChildNode));
         OnPropertyChanged(nameof(ActiveBreadcrumbText));
         OnPropertyChanged(nameof(ActiveSessionSummary));
         OnPropertyChanged(nameof(ActiveSession));
+        OnPropertyChanged(nameof(ActiveNode));
+        OnPropertyChanged(nameof(HasActiveNode));
     }
 }
