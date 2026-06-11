@@ -17,48 +17,56 @@ public sealed class GenerationSessionRelationshipService
             return false;
         }
 
-        session.References.SetRef(parent.Id, child.RelationshipName, reference);
-
         switch (parent.State)
         {
-            case QueryGeneratorState when string.Equals(child.RelationshipName, "Feature", StringComparison.Ordinal):
-            case QueryGeneratorState when string.Equals(child.RelationshipName, "ResultDto", StringComparison.Ordinal):
+            case QueryGeneratorState queryState when string.Equals(child.RelationshipName, "Feature", StringComparison.Ordinal):
+                queryState.FeatureRef = reference;
+                PropagateQueryFeatureToOwnedDto(parent, queryState.FeatureRef);
+                return true;
+
+            case QueryGeneratorState queryState when string.Equals(child.RelationshipName, "ResultDto", StringComparison.Ordinal):
+                queryState.ResultDtoRef = reference;
+                if (child.State is DtoGeneratorState dtoState)
+                {
+                    dtoState.FeatureRef = queryState.FeatureRef;
+                }
                 return true;
 
             case RepositoryGeneratorState repositoryState when string.Equals(child.RelationshipName, "Entity", StringComparison.Ordinal):
                 repositoryState.EntityRef = reference;
                 return true;
 
+            case CommandGeneratorState commandState when string.Equals(child.RelationshipName, "Feature", StringComparison.Ordinal):
+                commandState.FeatureRef = reference;
+                return true;
+
             case CommandGeneratorState commandState when string.Equals(child.RelationshipName, "Repository", StringComparison.Ordinal):
-                if (!commandState.RepositoryRefs.Any(existing => ArtifactRefEquals(existing, reference)))
+                if (!commandState.RepositoryRefs.Any(existing => ArtifactKey.Equals(existing, reference)))
                 {
                     commandState.RepositoryRefs.Add(reference);
                 }
-
                 return true;
 
             case WebPageGeneratorState webPageState when string.Equals(child.RelationshipName, "Query", StringComparison.Ordinal):
-                if (!webPageState.QueryRefs.Any(existing => ArtifactRefEquals(existing, reference)))
+                if (!webPageState.QueryRefs.Any(existing => ArtifactKey.Equals(existing, reference)))
                 {
                     webPageState.QueryRefs.Add(reference);
                 }
-
                 return true;
         }
 
         return false;
     }
 
-    private static bool ArtifactRefEquals(ArtifactRef left, ArtifactRef right)
+    private static void PropagateQueryFeatureToOwnedDto(GeneratorNode queryNode, ArtifactRef? featureRef)
     {
-        if (left.NodeId.HasValue && right.NodeId.HasValue)
-        {
-            return left.NodeId == right.NodeId;
-        }
+        var ownedDto = queryNode.Children.FirstOrDefault(child =>
+            child.Kind == GeneratorNodeKind.Dto &&
+            string.Equals(child.RelationshipName, "ResultDto", StringComparison.Ordinal));
 
-        return left.Kind == right.Kind
-               && left.Origin == right.Origin
-               && string.Equals(left.Name, right.Name, StringComparison.OrdinalIgnoreCase)
-               && string.Equals(left.FeaturePath, right.FeaturePath, StringComparison.OrdinalIgnoreCase);
+        if (ownedDto?.State is DtoGeneratorState dtoState)
+        {
+            dtoState.FeatureRef = featureRef;
+        }
     }
 }

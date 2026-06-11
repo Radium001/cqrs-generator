@@ -52,6 +52,7 @@ public sealed partial class AddWebPageRootSessionViewModel : ObservableObject,
         {
             AllowCustom = false,
             ItemNameSelector = item => item is FeatureItemViewModel f ? f.Name : item?.ToString() ?? string.Empty,
+            ItemKeySelector = item => item is FeatureItemViewModel f && f.Ref is not null ? ArtifactKey.From(f.Ref).Value : item?.ToString() ?? string.Empty,
         };
         FeaturePicker.PropertyChanged += OnFeaturePickerChanged;
 
@@ -105,6 +106,7 @@ public sealed partial class AddWebPageRootSessionViewModel : ObservableObject,
         {
             PageNameCyclic.Text = _sessionState.PageName;
             Route = _sessionState.Route;
+            CreateImports = _sessionState.CreateImports;
         }
 
         StatusText = "Configure Add Web Page.";
@@ -229,11 +231,18 @@ public sealed partial class AddWebPageRootSessionViewModel : ObservableObject,
         OnPropertyChanged(nameof(HasUnsavedChanges));
     }
 
+    partial void OnCreateImportsChanged(bool value)
+    {
+        SyncToSessionState();
+        OnPropertyChanged(nameof(HasUnsavedChanges));
+    }
+
     private void SyncToSessionState()
     {
         if (_sessionState is null) return;
         _sessionState.PageName = PageNameCyclic.FullText;
         _sessionState.Route = Route;
+        _sessionState.CreateImports = CreateImports;
         _sessionState.FeatureRef = SelectedFeature?.Ref;
         _sessionState.QueryRefs.Clear();
         foreach (var option in QueryPicker.GetSelectedOptionsByKey())
@@ -282,22 +291,18 @@ public sealed partial class AddWebPageRootSessionViewModel : ObservableObject,
             ArtifactRefEquals(f.Ref, previousFeatureRef))
             ?? webFeatures.FirstOrDefault();
 
-        _isSyncingFeature = true;
-        SelectedFeature = match;
-        FeaturePicker.SelectRawItem(match);
-        _isSyncingFeature = false;
-
         _pageNameAutoDerived = true;
         _routeAutoDerived = true;
-        _isSyncingPageName = true;
-        PageNameCyclic.Text = match?.Name ?? string.Empty;
-        _isSyncingPageName = false;
+        SelectedFeature = match;
 
         StatusText = webFeatures.Count == 0
             ? "No web features discovered."
             : "Configure Add Web Page.";
 
-        RefreshQueryChoices();
+        if (SelectedFeature is null)
+        {
+            RefreshQueryChoices();
+        }
     }
 
     private void OnFeaturePickerChanged(object? sender, PropertyChangedEventArgs e)
@@ -306,11 +311,7 @@ public sealed partial class AddWebPageRootSessionViewModel : ObservableObject,
 
         if (e.PropertyName == nameof(WrappedListPickerViewModel.SelectedItem))
         {
-            _isSyncingFeature = true;
             SelectedFeature = FeaturePicker.SelectedItem?.OriginalItem as FeatureItemViewModel;
-            _isSyncingFeature = false;
-            OnPropertyChanged(nameof(CanBuildPlan));
-            OnPropertyChanged(nameof(HasUnsavedChanges));
         }
     }
 
@@ -347,7 +348,7 @@ public sealed partial class AddWebPageRootSessionViewModel : ObservableObject,
     private void OpenCreateQuery()
     {
         if (Node is null || _navigator is null || _generationSession is null) return;
-        var state = new QueryGeneratorState { QueryName = "Get", FeaturePath = SelectedFeature?.Ref?.FeaturePath ?? string.Empty };
+        var state = new QueryGeneratorState { QueryName = "Get", FeatureRef = SelectedFeature?.Ref };
         var child = _navigator.CreateChild(Node, GeneratorNodeKind.Query, state, "Query");
         _navigator.OpenNode(child.Id);
     }
@@ -397,14 +398,6 @@ public sealed partial class AddWebPageRootSessionViewModel : ObservableObject,
 
     private static bool ArtifactRefEquals(ArtifactRef left, ArtifactRef right)
     {
-        if (left.NodeId.HasValue && right.NodeId.HasValue)
-        {
-            return left.NodeId == right.NodeId;
-        }
-
-        return left.Kind == right.Kind &&
-               left.Origin == right.Origin &&
-               string.Equals(left.Name, right.Name, StringComparison.OrdinalIgnoreCase) &&
-               string.Equals(left.FeaturePath, right.FeaturePath, StringComparison.OrdinalIgnoreCase);
+        return ArtifactKey.Equals(left, right);
     }
 }

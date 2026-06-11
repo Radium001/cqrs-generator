@@ -72,33 +72,38 @@ public sealed class RepositoryGeneratorDefinition : GeneratorDefinition<Reposito
     {
         var planService = core.ServiceProvider.GetRequiredService<IAddRepositoryPlanService>();
 
-        var entityName = GetEntityName(state, session);
+        var entity = GetEntity(state, session);
+        var entityName = entity?.Name;
+        var entityNamespace = entity?.Namespace;
 
         var formState = new AddRepositoryFormState(
             entityName,
             entityName,
+            entityNamespace,
             null,
-            null,
-            Array.Empty<string>(),
-            Array.Empty<RepositoryMethodSpec>(),
+            state.SelectedMethodPresetKeys.ToArray(),
+            state.CustomMethods.ToArray(),
             state.AddDependencyInjectionRegistration);
 
         return planService.BuildPlan(core.WorkspaceContext, formState);
     }
 
-    private static string? GetEntityName(RepositoryGeneratorState state, GenerationSession session)
+    private static (string Name, string Namespace)? GetEntity(RepositoryGeneratorState state, GenerationSession session)
     {
         if (state.EntityRef is null)
             return null;
 
         if (state.EntityRef.IsFromProject || !state.EntityRef.NodeId.HasValue)
         {
-            return state.EntityRef.Name;
+            return (state.EntityRef.Name, state.EntityRef.Namespace ?? GeneratorConstants.DomainEntitiesNamespace);
         }
 
         var entityNode = session.FindNode(state.EntityRef.NodeId.Value);
-        return entityNode?.State is EntityGeneratorState entityState
-            ? entityState.EntityName
-            : state.EntityRef.Name;
+        if (entityNode?.State is EntityGeneratorState entityState)
+        {
+            return (entityState.EntityName, state.EntityRef.Namespace ?? GeneratorConstants.DomainEntitiesNamespace);
+        }
+
+        return (state.EntityRef.Name, state.EntityRef.Namespace ?? GeneratorConstants.DomainEntitiesNamespace);
     }
 }

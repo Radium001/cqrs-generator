@@ -29,6 +29,7 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
     private ProjectModel? _projectModel;
     private bool _isSyncingFeature;
     private bool _isSyncingDtoName;
+    private bool _isLoadingFromState;
 
     public GeneratorNode? Node { get; set; }
 
@@ -57,6 +58,7 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
         {
             AllowCustom = false,
             ItemNameSelector = item => item is FeatureItemViewModel f ? f.Name : item?.ToString() ?? string.Empty,
+            ItemKeySelector = item => item is FeatureItemViewModel f && f.Ref is not null ? ArtifactKey.From(f.Ref).Value : item?.ToString() ?? string.Empty,
         };
         FeaturePicker.PropertyChanged += OnFeaturePickerChanged;
 
@@ -92,17 +94,11 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
         };
         SubfolderPickerConfiguration.Configure(SubfolderPicker);
         SubfolderPicker.Items = new List<string> { "(root folder)" };
+        SubfolderPicker.PropertyChanged += OnSubfolderPickerChanged;
 
         if (_sessionState is not null)
         {
-            DtoNameCyclic.SelectedIndex = _sessionState.SuffixIndex;
-            DtoNameCyclic.Text = _sessionState.BaseName;
-            foreach (var property in _sessionState.Properties)
-            {
-                var propertyViewModel = new PropertyEntryViewModel(property.Type, property.Name);
-                propertyViewModel.PropertyChanged += OnPropertyEntryChanged;
-                Parameters.Add(propertyViewModel);
-            }
+            LoadFromSessionState(_sessionState);
         }
         else
         {
@@ -180,7 +176,15 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
     public void SetGenerationSession(GenerationSession session)
     {
         _generationSession = session;
-        _sessionState = Node?.State as DtoGeneratorState;
+        if (Node?.State is DtoGeneratorState state)
+        {
+            _sessionState = state;
+            LoadFromSessionState(state);
+            if (_isStandalone)
+            {
+                SyncToSessionState();
+            }
+        }
     }
 
     public IReadOnlyList<ScenarioNodeViewModel> GetScenarioNodes()
@@ -213,6 +217,7 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
         }
 
         SubfolderPicker.Items = items;
+        RestoreSubfolderSelection(_sessionState?.Subfolder);
     }
 
     private void ReloadProject(ProjectModel? project)
@@ -231,7 +236,7 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
             return;
         }
 
-        var selectedFeatureRef = _generationSession.References.GetRef(Node?.Id ?? default, "Feature") ?? _sessionState?.FeatureRef;
+        var selectedFeatureRef = _sessionState?.FeatureRef;
         var features = _generationSession.Artifacts.GetFeatures()
             .Select(feature => new FeatureItemViewModel(feature.Ref))
             .OrderBy(feature => feature.Name, StringComparer.OrdinalIgnoreCase)
@@ -259,11 +264,11 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
 
         var shouldLock = selected is not null && (
             _fixedFeature is not null ||
-            (!_isStandalone && (_generationSession?.References.GetRef(Node?.Id ?? default, "Feature") is not null || _sessionState?.FeatureRef is not null)));
+            (!_isStandalone && _sessionState?.FeatureRef is not null));
 
         _isSyncingFeature = true;
         SelectedFeature = selected;
-        if (shouldLock)
+        if (shouldLock && selected is not null)
         {
             FeaturePicker.LockSelection(selected);
         }
@@ -301,7 +306,17 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
             _isSyncingDtoName = true;
             DtoName = DtoNameCyclic.FullText;
             _isSyncingDtoName = false;
+            SyncToSessionState();
+            OnPropertyChanged(nameof(CanBuildPlan));
+            OnPropertyChanged(nameof(CanComplete));
+            OnPropertyChanged(nameof(HasUnsavedChanges));
         }
+    }
+
+    partial void OnUpdateWebImportsChanged(bool value)
+    {
+        SyncToSessionState();
+        OnPropertyChanged(nameof(HasUnsavedChanges));
     }
 
     partial void OnDtoNameChanged(string value)
@@ -345,11 +360,59 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
         OnPropertyChanged(nameof(HasUnsavedChanges));
     }
 
+
+    private void OnSubfolderPickerChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(WrappedListPickerViewModel.SelectedItem) or nameof(WrappedListPickerViewModel.SearchText))
+        {
+            SyncToSessionState();
+            OnPropertyChanged(nameof(HasUnsavedChanges));
+        }
+    }
+
+    private void RestoreSubfolderSelection(string? savedSubfolder)
+    {
+        if (string.IsNullOrWhiteSpace(savedSubfolder))
+        {
+            SubfolderPicker.SearchText = string.Empty;
+            if (SubfolderPicker.Items.Count > 0)
+            {
+                SubfolderPicker.SelectRawItem(SubfolderPicker.Items[0]);
+            }
+            return;
+        }
+
+        var existing = SubfolderPicker.Items.Cast<string>()
+            .FirstOrDefault(item => string.Equals(item, savedSubfolder, StringComparison.OrdinalIgnoreCase));
+        if (existing is not null)
+        {
+            SubfolderPicker.SearchText = string.Empty;
+            SubfolderPicker.SelectRawItem(existing);
+            return;
+        }
+
+        SubfolderPicker.SearchText = savedSubfolder;
+    }
+
+    private string? GetSubfolder()
+    {
+        var selected = SubfolderPicker.SelectedItem?.BaseName ?? SubfolderPicker.SearchText;
+        if (string.IsNullOrWhiteSpace(selected) || selected == "(root folder)")
+        {
+            return null;
+        }
+
+        return selected.Trim();
+    }
+
     private void SyncToSessionState()
     {
-        if (_sessionState is null) return;
+        if (_sessionState is null || _isLoadingFromState) return;
         _sessionState.BaseName = DtoNameCyclic.Text.Trim();
         _sessionState.SuffixIndex = DtoNameCyclic.SelectedIndex;
+        _sessionState.UpdateWebImports = UpdateWebImports;
+        _sessionState.Subfolder = GetSubfolder();
+        _sessionState.FeatureRef = SelectedFeature?.Ref;
         _sessionState.Properties.Clear();
         foreach (var p in Parameters.Where(p => p.IsComplete))
         {
@@ -357,16 +420,49 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
         }
     }
 
+
+    private void LoadFromSessionState(DtoGeneratorState state)
+    {
+        _isLoadingFromState = true;
+        try
+        {
+            _isSyncingDtoName = true;
+            DtoNameCyclic.SelectedIndex = state.SuffixIndex;
+            DtoNameCyclic.Text = state.BaseName;
+            DtoName = DtoNameCyclic.FullText;
+            _isSyncingDtoName = false;
+
+            UpdateWebImports = state.UpdateWebImports;
+
+            foreach (var parameter in Parameters)
+            {
+                parameter.PropertyChanged -= OnPropertyEntryChanged;
+            }
+            Parameters.Clear();
+
+            foreach (var property in state.Properties.ToArray())
+            {
+                var propertyViewModel = new PropertyEntryViewModel(property.Type, property.Name);
+                propertyViewModel.PropertyChanged += OnPropertyEntryChanged;
+                Parameters.Add(propertyViewModel);
+            }
+
+            if (Parameters.Count == 0 && _isStandalone)
+            {
+                var propertyViewModel = new PropertyEntryViewModel("string", "Property1");
+                propertyViewModel.PropertyChanged += OnPropertyEntryChanged;
+                Parameters.Add(propertyViewModel);
+            }
+        }
+        finally
+        {
+            _isSyncingDtoName = false;
+            _isLoadingFromState = false;
+        }
+    }
+
     private static bool ArtifactRefEquals(ArtifactRef left, ArtifactRef right)
     {
-        if (left.NodeId.HasValue && right.NodeId.HasValue)
-        {
-            return left.NodeId == right.NodeId;
-        }
-
-        return left.Kind == right.Kind
-               && left.Origin == right.Origin
-               && string.Equals(left.Name, right.Name, StringComparison.OrdinalIgnoreCase)
-               && string.Equals(left.FeaturePath, right.FeaturePath, StringComparison.OrdinalIgnoreCase);
+        return ArtifactKey.Equals(left, right);
     }
 }

@@ -14,7 +14,7 @@
               CornerRadius="6">
         <Grid ColumnDefinitions="*,*,*"
               ColumnSpacing="16">
-          <Grid RowDefinitions="Auto,*"
+          <Grid RowDefinitions="Auto,*,Auto"
                 RowSpacing="8"
                 HorizontalAlignment="Stretch">
             <TextBlock Text="Feature"
@@ -22,6 +22,20 @@
             <shared:WrappedListPicker Grid.Row="1"
                                       DataContext="{Binding FeaturePicker}"
                                       HorizontalAlignment="Stretch" />
+            <StackPanel Grid.Row="2"
+                        Orientation="Horizontal"
+                        Spacing="8">
+              <Button Content="Create Feature"
+                      Command="{Binding OpenCreateFeatureCommand}"
+                      HorizontalAlignment="Left"
+                      IsVisible="{Binding ShowCreateFeatureButton}" />
+              <Button Content="Edit"
+                      Command="{Binding EditSelectedFeatureCommand}"
+                      IsEnabled="{Binding CanEditSelectedFeature}" />
+              <Button Content="Remove"
+                      Command="{Binding RemoveSelectedFeatureCommand}"
+                      IsEnabled="{Binding CanRemoveSelectedFeature}" />
+            </StackPanel>
           </Grid>
 
           <Grid Grid.Column="1"

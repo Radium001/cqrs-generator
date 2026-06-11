@@ -18,10 +18,11 @@ public sealed partial class CreateFeatureRootSessionViewModel : ObservableObject
     private readonly ICreateFeatureScenarioOutlineBuilder _scenarioOutlineBuilder;
     private readonly GenerationActionDescriptor? _actionDescriptor;
     private readonly bool _isStandalone;
-    private readonly FeatureGeneratorState? _sessionState;
+    private FeatureGeneratorState? _sessionState;
     private ProjectModel? _projectModel;
     private bool _hasNonRootSubfolder;
     private bool _isReloadingSubfolderPicker;
+    private bool _isLoadingFromState;
 
     public GeneratorNode? Node { get; set; }
 
@@ -50,8 +51,7 @@ public sealed partial class CreateFeatureRootSessionViewModel : ObservableObject
 
         if (_sessionState is not null)
         {
-            _featurePath = _sessionState.FeatureName;
-            _createWebFeature = _sessionState.CreateWebFeature;
+            LoadFromSessionState(_sessionState);
         }
 
         StatusText = _isStandalone ? "Configure New Feature." : "Define feature draft.";
@@ -76,7 +76,8 @@ public sealed partial class CreateFeatureRootSessionViewModel : ObservableObject
 
     public bool HasUnsavedChanges =>
         !string.IsNullOrWhiteSpace(FeaturePath) ||
-        _hasNonRootSubfolder;
+        _hasNonRootSubfolder ||
+        !CreateWebFeature;
 
     public bool CanClose => true;
 
@@ -97,6 +98,17 @@ public sealed partial class CreateFeatureRootSessionViewModel : ObservableObject
     [ObservableProperty]
     private bool _createWebFeature = true;
 
+
+    public void SetGenerationSession(GenerationSession session)
+    {
+        if (Node?.State is FeatureGeneratorState state)
+        {
+            _sessionState = state;
+            LoadFromSessionState(state);
+            SyncToSessionState();
+        }
+    }
+
     partial void OnFeaturePathChanged(string value)
     {
         SyncToSessionState();
@@ -108,14 +120,31 @@ public sealed partial class CreateFeatureRootSessionViewModel : ObservableObject
     partial void OnCreateWebFeatureChanged(bool value)
     {
         SyncToSessionState();
+        OnPropertyChanged(nameof(HasUnsavedChanges));
     }
 
     private void SyncToSessionState()
     {
-        if (_sessionState is null) return;
+        if (_sessionState is null || _isLoadingFromState) return;
         _sessionState.FeatureName = FeaturePath?.Trim() ?? string.Empty;
         _sessionState.CreateWebFeature = CreateWebFeature;
         _sessionState.Subfolder = GetSelectedSubfolder();
+    }
+
+    private void LoadFromSessionState(FeatureGeneratorState state)
+    {
+        _isLoadingFromState = true;
+        try
+        {
+            FeaturePath = state.FeatureName;
+            CreateWebFeature = state.CreateWebFeature;
+            RestoreSubfolderSelection(state.Subfolder);
+            UpdateSubfolderFlag();
+        }
+        finally
+        {
+            _isLoadingFromState = false;
+        }
     }
 
     public void UpdateWorkspace(ProjectWorkspaceContext? workspaceContext)

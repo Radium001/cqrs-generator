@@ -504,6 +504,12 @@ public sealed partial class GeneratorStackViewModel : ObservableObject
             case DtoRootSessionViewModel dto:
                 dto.SetGenerationSession(_generationSession);
                 break;
+            case EntityRootSessionViewModel entity:
+                entity.SetGenerationSession(_generationSession);
+                break;
+            case CreateFeatureRootSessionViewModel feature:
+                feature.SetGenerationSession(_generationSession);
+                break;
         }
     }
 }

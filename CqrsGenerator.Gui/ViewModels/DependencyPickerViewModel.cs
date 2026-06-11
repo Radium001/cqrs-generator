@@ -103,15 +103,21 @@ public sealed partial class DependencyPickerViewModel : ObservableObject
 
     public void SetSelectedDependencies(IEnumerable<ArtifactRef> references)
     {
-        var selectedReferences = references.ToList();
+        SetSelectedDependencies(references, Array.Empty<string>());
+    }
+
+    public void SetSelectedDependencies(IEnumerable<ArtifactRef> references, IEnumerable<string> standardDependencyNames)
+    {
+        var selectedKeys = references
+            .Select(reference => GetOptionKey(new CommandDependencyOption(reference.Name, reference.IsFromSession, reference)))
+            .Concat(standardDependencyNames.Select(name => GetOptionKey(new CommandDependencyOption(name))))
+            .ToHashSet(StringComparer.Ordinal);
+
         Picker.DeselectAllCommand.Execute(null);
 
-        foreach (var reference in selectedReferences)
+        foreach (var item in Picker.FilteredItems.Cast<WrappedListItem>().ToList())
         {
-            var key = GetOptionKey(new CommandDependencyOption(reference.Name, reference.IsFromSession, reference));
-            var item = Picker.FilteredItems.Cast<WrappedListItem>()
-                .FirstOrDefault(w => w.OriginalItem is CommandDependencyOption option && GetOptionKey(option) == key);
-            if (item?.OriginalItem is not null)
+            if (item.OriginalItem is CommandDependencyOption option && selectedKeys.Contains(GetOptionKey(option)))
             {
                 Picker.ToggleItemCommand.Execute(item.OriginalItem);
             }
@@ -141,8 +147,8 @@ public sealed partial class DependencyPickerViewModel : ObservableObject
             return item?.ToString() ?? string.Empty;
         }
 
-        return option.NodeId.HasValue
-            ? $"session:{option.NodeId.Value:D}"
-            : $"name:{option.InterfaceName}";
+        return option.Ref is not null
+            ? ArtifactKey.From(option.Ref).Value
+            : $"standard:{option.InterfaceName}";
     }
 }

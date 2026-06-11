@@ -55,6 +55,7 @@ public sealed partial class RepositoryRootSessionViewModel : ObservableObject,
         {
             AllowCustom = false,
             ItemNameSelector = item => item is EntityItemViewModel entity ? entity.DisplayName : item?.ToString() ?? string.Empty,
+            ItemKeySelector = item => item is EntityItemViewModel entity && entity.Ref is not null ? ArtifactKey.From(entity.Ref).Value : item?.ToString() ?? string.Empty,
         };
         EntityPicker.PropertyChanged += OnEntityPickerChanged;
 
@@ -80,6 +81,23 @@ public sealed partial class RepositoryRootSessionViewModel : ObservableObject,
         if (_sessionState is not null)
         {
             AddDependencyInjectionRegistration = _sessionState.AddDependencyInjectionRegistration;
+            foreach (var preset in MethodPresets)
+            {
+                preset.IsSelected = _sessionState.SelectedMethodPresetKeys.Count == 0
+                    ? preset.IsSelected
+                    : _sessionState.SelectedMethodPresetKeys.Contains(preset.Key);
+            }
+
+            foreach (var method in _sessionState.CustomMethods)
+            {
+                var editor = new RepositoryMethodEditorViewModel(
+                    method.Name,
+                    method.ReturnType,
+                    method.Parameters,
+                    RemoveCustomMethodCommand);
+                editor.PropertyChanged += OnCustomMethodChanged;
+                CustomMethods.Add(editor);
+            }
         }
     }
 
@@ -225,6 +243,7 @@ public sealed partial class RepositoryRootSessionViewModel : ObservableObject,
     {
         CustomMethods.Add(new RepositoryMethodEditorViewModel("GetActiveAsync", "Task", [], RemoveCustomMethodCommand));
         CustomMethods[^1].PropertyChanged += OnCustomMethodChanged;
+        SyncToSessionState();
         OnPropertyChanged(nameof(CanBuildPlan));
         OnPropertyChanged(nameof(CanComplete));
         OnPropertyChanged(nameof(HasUnsavedChanges));
@@ -239,6 +258,7 @@ public sealed partial class RepositoryRootSessionViewModel : ObservableObject,
 
         method.PropertyChanged -= OnCustomMethodChanged;
         CustomMethods.Remove(method);
+        SyncToSessionState();
         OnPropertyChanged(nameof(CanBuildPlan));
         OnPropertyChanged(nameof(CanComplete));
         OnPropertyChanged(nameof(HasUnsavedChanges));
@@ -278,12 +298,27 @@ public sealed partial class RepositoryRootSessionViewModel : ObservableObject,
         if (_sessionState is null) return;
         _sessionState.AddDependencyInjectionRegistration = AddDependencyInjectionRegistration;
         _sessionState.EntityRef = SelectedEntity?.Ref;
+        _sessionState.SelectedMethodPresetKeys.Clear();
+        foreach (var preset in MethodPresets.Where(preset => preset.IsSelected))
+        {
+            _sessionState.SelectedMethodPresetKeys.Add(preset.Key);
+        }
+
+        _sessionState.CustomMethods.Clear();
+        var entityName = SelectedEntity?.Name ?? "Entity";
+        foreach (var method in BuildMethods(entityName).Where(method =>
+            !MethodPresets.Any(preset => preset.IsSelected &&
+                string.Equals(RepositoryMethodCatalog.Create(preset.Key, entityName).Name, method.Name, StringComparison.Ordinal))))
+        {
+            _sessionState.CustomMethods.Add(method);
+        }
     }
 
     private void OnMethodPresetChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(RepositoryMethodPresetItemViewModel.IsSelected))
         {
+            SyncToSessionState();
             OnPropertyChanged(nameof(CanBuildPlan));
             OnPropertyChanged(nameof(CanComplete));
             OnPropertyChanged(nameof(HasUnsavedChanges));
@@ -292,6 +327,7 @@ public sealed partial class RepositoryRootSessionViewModel : ObservableObject,
 
     private void OnCustomMethodChanged(object? sender, PropertyChangedEventArgs e)
     {
+        SyncToSessionState();
         OnPropertyChanged(nameof(CanBuildPlan));
         OnPropertyChanged(nameof(CanComplete));
         OnPropertyChanged(nameof(HasUnsavedChanges));
@@ -394,21 +430,11 @@ public sealed partial class RepositoryRootSessionViewModel : ObservableObject,
 
     private static bool ArtifactRefEquals(ArtifactRef left, ArtifactRef right)
     {
-        if (left.NodeId.HasValue && right.NodeId.HasValue)
-        {
-            return left.NodeId == right.NodeId;
-        }
-
-        return left.Kind == right.Kind &&
-               left.Origin == right.Origin &&
-               string.Equals(left.Name, right.Name, StringComparison.OrdinalIgnoreCase) &&
-               string.Equals(left.Namespace, right.Namespace, StringComparison.OrdinalIgnoreCase);
+        return ArtifactKey.Equals(left, right);
     }
 
     private static string GetEntityKey(ArtifactRef reference)
     {
-        return reference.NodeId.HasValue
-            ? $"session:{reference.NodeId.Value:D}"
-            : $"project:{reference.Name}:{reference.Namespace}";
+        return ArtifactKey.From(reference).Value;
     }
 }

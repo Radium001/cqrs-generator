@@ -35,6 +35,10 @@ public sealed class CommandGeneratorState
 
     public ObservableCollection<ArtifactRef> RepositoryRefs { get; } = new();
 
+    public ObservableCollection<string> StandardDependencyNames { get; } = new();
+
+    public bool UpdateWebImports { get; set; } = true;
+
     public ObservableCollection<Guid> RepositoryNodeIds { get; } = new();
 
     private void OnRepositoryRefsChanged(object? sender, NotifyCollectionChangedEventArgs e)

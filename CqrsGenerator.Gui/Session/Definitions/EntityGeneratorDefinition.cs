@@ -45,6 +45,9 @@ public sealed class EntityGeneratorDefinition : GeneratorDefinition<EntityGenera
         if (string.IsNullOrWhiteSpace(state.EntityName))
             return GeneratorValidationResult.Error("Entity name is required.");
 
+        if (state.SourceMode == EntitySourceMode.EfEntity && state.SelectedEfEntity is null)
+            return GeneratorValidationResult.Error("EF entity is not selected.");
+
         return GeneratorValidationResult.Valid;
     }
 
@@ -65,19 +68,19 @@ public sealed class EntityGeneratorDefinition : GeneratorDefinition<EntityGenera
         var planService = core.ServiceProvider.GetRequiredService<IAddEntityPlanService>();
 
         var formState = new AddEntityFormState(
-            EntitySourceMode.Manual,
-            null,
-            Array.Empty<string>(),
-            false,
+            state.SourceMode,
+            state.SelectedEfEntity,
+            state.SelectedEfPropertyNames.ToArray(),
+            state.RenameEfIdentifierProperties,
             state.EntityName,
-            null,
+            state.Subfolder,
             state.Properties
                 .Select(p => new PropertySpec(p.Type, p.Name))
                 .ToArray(),
-            false,
-            false,
-            false,
-            Array.Empty<string>());
+            state.GenerateFactoryMethod,
+            state.GenerateEfMapping,
+            state.GenerateInterface,
+            state.DomainMethods.ToArray());
 
         return planService.BuildPlan(core.WorkspaceContext, formState);
     }

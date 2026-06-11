@@ -1,3 +1,4 @@
+using CqrsGenerator.Core.Configuration;
 using CqrsGenerator.Core.Discovery;
 using CqrsGenerator.Core.Generation;
 using CqrsGenerator.Gui.Session.States;
@@ -320,27 +321,27 @@ public sealed class SessionArtifactIndex
 
     private static string CreateFeatureKey(ArtifactRef reference)
     {
-        return (reference.FeaturePath ?? reference.Name).ToUpperInvariant();
+        return ArtifactKey.From(reference).Value;
     }
 
     private static string CreateDtoKey(ArtifactRef reference)
     {
-        return reference.Name.ToUpperInvariant();
+        return ArtifactKey.From(reference).Value;
     }
 
     private static string CreateEntityKey(ArtifactRef reference)
     {
-        return $"{reference.Name}|{reference.Namespace}|{reference.ProjectPath}|{reference.FeaturePath}".ToUpperInvariant();
+        return ArtifactKey.From(reference).Value;
     }
 
     private static string CreateRepositoryKey(ArtifactRef reference)
     {
-        return $"{reference.Name}|{reference.FeaturePath}|{reference.ProjectPath}".ToUpperInvariant();
+        return ArtifactKey.From(reference).Value;
     }
 
     private static string CreateQueryKey(ArtifactRef reference)
     {
-        return $"{reference.Name}|{reference.FeaturePath}".ToUpperInvariant();
+        return ArtifactKey.From(reference).Value;
     }
 
     private ArtifactRef? CreateSessionArtifactRef(GeneratorNode node)
@@ -353,7 +354,7 @@ public sealed class SessionArtifactIndex
                     ArtifactOrigin.Session,
                     featureState.FeatureName,
                     node.Id,
-                    FeaturePath: featureState.FeatureName,
+                    FeaturePath: GetFeaturePath(featureState),
                     DisplayName: featureState.FeatureName),
 
             GeneratorNodeKind.Dto when node.State is DtoGeneratorState dtoState =>
@@ -363,6 +364,7 @@ public sealed class SessionArtifactIndex
                     GetDtoFullName(dtoState),
                     node.Id,
                     FeaturePath: dtoState.FeatureRef?.FeaturePath,
+                    OwnerName: ResolveOwnerQueryName(node),
                     DisplayName: GetDtoFullName(dtoState)),
 
             GeneratorNodeKind.Entity when node.State is EntityGeneratorState entityState =>
@@ -372,16 +374,17 @@ public sealed class SessionArtifactIndex
                     entityState.EntityName,
                     node.Id,
                     FeaturePath: ResolveFeaturePath(node, _ => null),
+                    Namespace: GetEntityNamespace(entityState),
                     DisplayName: entityState.EntityName),
 
             GeneratorNodeKind.Repository when node.State is RepositoryGeneratorState repositoryState =>
                 new ArtifactRef(
                     GeneratorNodeKind.Repository,
                     ArtifactOrigin.Session,
-                    repositoryState.InterfaceName,
+                    GetRepositoryInterfaceName(repositoryState),
                     node.Id,
                     repositoryState.FeatureRef?.FeaturePath,
-                    DisplayName: repositoryState.InterfaceName),
+                    DisplayName: GetRepositoryInterfaceName(repositoryState)),
 
             GeneratorNodeKind.Query when node.State is QueryGeneratorState queryState =>
                 new ArtifactRef(
@@ -394,6 +397,19 @@ public sealed class SessionArtifactIndex
 
             _ => null,
         };
+    }
+
+    private string? ResolveOwnerQueryName(GeneratorNode node)
+    {
+        if (node.ParentId is null || !string.Equals(node.RelationshipName, "ResultDto", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var parent = _session.FindNode(node.ParentId.Value);
+        return parent?.State is QueryGeneratorState queryState
+            ? StringUtilities.StripSuffix(queryState.QueryName, GeneratorConstants.QuerySuffix)
+            : null;
     }
 
     private string? ResolveFeaturePath(GeneratorNode node, Func<GeneratorNode, string?> currentResolver)
@@ -431,6 +447,38 @@ public sealed class SessionArtifactIndex
         }
 
         return null;
+    }
+
+
+    private static string GetEntityNamespace(EntityGeneratorState state)
+    {
+        if (string.IsNullOrWhiteSpace(state.Subfolder))
+        {
+            return GeneratorConstants.DomainEntitiesNamespace;
+        }
+
+        return $"{GeneratorConstants.DomainEntitiesNamespace}.{state.Subfolder.Trim().Replace('/', '.').Replace('\\', '.')}";
+    }
+
+    private static string GetRepositoryInterfaceName(RepositoryGeneratorState state)
+    {
+        if (!string.IsNullOrWhiteSpace(state.InterfaceName) &&
+            !string.Equals(state.InterfaceName, "IRepository", StringComparison.OrdinalIgnoreCase))
+        {
+            return state.InterfaceName;
+        }
+
+        var entityName = state.EntityRef?.Name;
+        return string.IsNullOrWhiteSpace(entityName)
+            ? state.InterfaceName
+            : GenerationNaming.GetRepositoryInterfaceName(entityName);
+    }
+
+    private static string GetFeaturePath(FeatureGeneratorState state)
+    {
+        return string.IsNullOrWhiteSpace(state.Subfolder)
+            ? state.FeatureName
+            : $"{state.Subfolder.Trim().TrimEnd('/', '\\')}/{state.FeatureName}";
     }
 
     private static string GetDtoFullName(DtoGeneratorState state)

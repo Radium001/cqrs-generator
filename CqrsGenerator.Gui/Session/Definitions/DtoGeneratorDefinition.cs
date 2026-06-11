@@ -71,8 +71,8 @@ public sealed class DtoGeneratorDefinition : GeneratorDefinition<DtoGeneratorSta
             state.Properties
                 .Select(p => new PropertySpec(p.Type, p.Name))
                 .ToArray(),
-            false,
-            null);
+            state.UpdateWebImports,
+            state.Subfolder);
 
         return planService.BuildPlan(core.WorkspaceContext, formState);
     }

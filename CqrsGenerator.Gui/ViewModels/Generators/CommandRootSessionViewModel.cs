@@ -49,7 +49,11 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject,
         Parameters = [];
         ResultTypeItems = [];
 
-        FeaturePicker = new WrappedListPickerViewModel();
+        FeaturePicker = new WrappedListPickerViewModel
+        {
+            ItemNameSelector = item => item is FeatureItemViewModel f ? f.Name : item?.ToString() ?? string.Empty,
+            ItemKeySelector = item => item is FeatureItemViewModel f && f.Ref is not null ? ArtifactKey.From(f.Ref).Value : item?.ToString() ?? string.Empty,
+        };
         FeaturePicker.PropertyChanged += OnFeaturePickerChanged;
 
         CommandNameCyclic = new CyclicInputViewModel
@@ -73,6 +77,9 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject,
 
         AddParameterCommand = new RelayCommand(AddParameter);
         RemoveParameterCommand = new RelayCommand<PropertyEntryViewModel>(RemoveParameter);
+        OpenCreateFeatureCommand = new RelayCommand(OpenCreateFeature, () => Node is not null && !HasOwnedCommittedChild("Feature", GeneratorNodeKind.Feature));
+        EditSelectedFeatureCommand = new RelayCommand(EditSelectedFeature, () => SelectedFeature?.NodeId is not null);
+        RemoveSelectedFeatureCommand = new RelayCommand(RemoveSelectedFeature, () => HasOwnedCommittedChild("Feature", GeneratorNodeKind.Feature));
         ParameterEditor = new PropertyEntryListEditorViewModel(
             Parameters,
             AddParameterCommand,
@@ -115,7 +122,11 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject,
 
             if (_navigator.RemoveNode(nodeId))
             {
-                _sessionState?.RepositoryRefs.Remove(_sessionState.RepositoryRefs.FirstOrDefault(r => r.NodeId == nodeId)!);
+                var toRemove = _sessionState?.RepositoryRefs.FirstOrDefault(r => r.NodeId == nodeId);
+                if (toRemove is not null)
+                {
+                    _sessionState!.RepositoryRefs.Remove(toRemove);
+                }
                 RefreshRepositoryChoices();
             }
         };
@@ -130,7 +141,9 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject,
             }
             foreach (var param in _sessionState.Parameters)
             {
-                Parameters.Add(new PropertyEntryViewModel(param.Type, param.Name));
+                var parameter = new PropertyEntryViewModel(param.Type, param.Name);
+                parameter.PropertyChanged += OnParameterChanged;
+                Parameters.Add(parameter);
             }
         }
     }
@@ -151,6 +164,7 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject,
         }
         DependencyPicker.CreateRepositoryCommand = new RelayCommand(OpenCreateRepository, () => Node is not null);
         DependencyPicker.HasCreateRepository = true;
+        NotifyFeatureCommands();
     }
 
     public WrappedListPickerViewModel FeaturePicker { get; }
@@ -197,6 +211,18 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject,
     public IRelayCommand AddParameterCommand { get; }
 
     public IRelayCommand<PropertyEntryViewModel> RemoveParameterCommand { get; }
+
+    public IRelayCommand OpenCreateFeatureCommand { get; }
+
+    public IRelayCommand EditSelectedFeatureCommand { get; }
+
+    public IRelayCommand RemoveSelectedFeatureCommand { get; }
+
+    public bool ShowCreateFeatureButton => Node is not null && _navigator is not null && !HasOwnedCommittedChild("Feature", GeneratorNodeKind.Feature);
+
+    public bool CanEditSelectedFeature => SelectedFeature?.NodeId is not null;
+
+    public bool CanRemoveSelectedFeature => HasOwnedCommittedChild("Feature", GeneratorNodeKind.Feature);
 
     [ObservableProperty]
     private FeatureItemViewModel? _selectedFeature;
@@ -273,6 +299,7 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject,
         }
         ResultTypePicker.RawItems = ResultTypeItems;
         RefreshRepositoryChoices();
+        NotifyFeatureCommands();
     }
 
     partial void OnCommandNameChanged(string value)
@@ -294,6 +321,13 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject,
     {
         SyncToSessionState();
         OnPropertyChanged(nameof(CanBuildPlan));
+        OnPropertyChanged(nameof(HasUnsavedChanges));
+    }
+
+
+    partial void OnUpdateWebImportsChanged(bool value)
+    {
+        SyncToSessionState();
         OnPropertyChanged(nameof(HasUnsavedChanges));
     }
 
@@ -328,20 +362,25 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject,
             ArtifactRefEquals(feature.Ref, previousFeatureRef))
             ?? features.FirstOrDefault();
 
-        _isSyncingFeature = true;
         SelectedFeature = match;
-        FeaturePicker.SelectRawItem(match);
-        _isSyncingFeature = false;
 
         _isSyncingCommandName = true;
         CommandName = CommandNameCyclic.FullText;
         _isSyncingCommandName = false;
 
-        RefreshRepositoryChoices();
+        if (SelectedFeature is null)
+        {
+            ResultTypeItems.Clear();
+            ResultTypePicker.RawItems = ResultTypeItems;
+            RefreshRepositoryChoices();
+        }
 
         StatusText = AvailableFeatures.Count == 0
             ? "No features discovered."
             : "Configure Add Command.";
+
+        SyncToSessionState();
+        NotifyFeatureCommands();
     }
 
     private void OnCommandNameCyclicChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -351,6 +390,7 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject,
             _isSyncingCommandName = true;
             CommandName = CommandNameCyclic.FullText;
             _isSyncingCommandName = false;
+            SyncToSessionState();
         }
     }
 
@@ -358,9 +398,7 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject,
     {
         if (e.PropertyName == nameof(WrappedListPickerViewModel.SelectedItem) && !_isSyncingFeature)
         {
-            _isSyncingFeature = true;
             SelectedFeature = FeaturePicker.SelectedRawItem as FeatureItemViewModel;
-            _isSyncingFeature = false;
         }
     }
 
@@ -380,6 +418,7 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject,
         if (_sessionState is null) return;
         _sessionState.CommandName = CommandName.Trim();
         _sessionState.ResponseType = HasResponseType ? GetDtoTypeName() : null;
+        _sessionState.UpdateWebImports = UpdateWebImports;
         _sessionState.Parameters.Clear();
         foreach (var p in Parameters.Where(p => !string.IsNullOrWhiteSpace(p.Type) && !string.IsNullOrWhiteSpace(p.Name)))
         {
@@ -396,7 +435,9 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject,
 
     private void AddParameter()
     {
-        Parameters.Add(new PropertyEntryViewModel("string", $"param{Parameters.Count + 1}"));
+        var parameter = new PropertyEntryViewModel("string", $"param{Parameters.Count + 1}");
+        parameter.PropertyChanged += OnParameterChanged;
+        Parameters.Add(parameter);
         SyncToSessionState();
         OnPropertyChanged(nameof(CanBuildPlan));
     }
@@ -408,9 +449,58 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject,
             return;
         }
 
+        parameter.PropertyChanged -= OnParameterChanged;
         Parameters.Remove(parameter);
         SyncToSessionState();
         OnPropertyChanged(nameof(CanBuildPlan));
+    }
+
+
+    private void OnParameterChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(PropertyEntryViewModel.Type) or nameof(PropertyEntryViewModel.Name))
+        {
+            SyncToSessionState();
+            OnPropertyChanged(nameof(CanBuildPlan));
+            OnPropertyChanged(nameof(HasUnsavedChanges));
+        }
+    }
+
+    private void OpenCreateFeature()
+    {
+        if (Node is null || _navigator is null || _generationSession is null) return;
+        var state = new FeatureGeneratorState { FeatureName = "NewFeature", CreateWebFeature = true };
+        var child = _navigator.CreateChild(Node, GeneratorNodeKind.Feature, state, "Feature");
+        _navigator.OpenNode(child.Id);
+    }
+
+    private void EditSelectedFeature()
+    {
+        if (SelectedFeature?.NodeId is Guid nodeId)
+        {
+            _navigator?.OpenNode(nodeId);
+        }
+    }
+
+    private void RemoveSelectedFeature()
+    {
+        var child = FindOwnedCommittedChild("Feature", GeneratorNodeKind.Feature);
+        if (child is null || _navigator is null)
+        {
+            return;
+        }
+
+        if (_navigator.RemoveNode(child.Id))
+        {
+            if (_sessionState?.FeatureRef?.NodeId == child.Id)
+            {
+                _sessionState.FeatureRef = null;
+            }
+
+            FeaturePicker.UnlockSelection(clearSearchText: true);
+            ReloadProject(_projectModel);
+            NotifyFeatureCommands();
+        }
     }
 
     private void OpenCreateRepository()
@@ -442,12 +532,12 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject,
             {
                 var artifacts = _generationSession.Artifacts.GetRepositories(featurePath);
                 DependencyPicker.SetDiscovered(artifacts);
-                DependencyPicker.SetSelectedDependencies(selectedReferences);
+                DependencyPicker.SetSelectedDependencies(selectedReferences, _sessionState?.StandardDependencyNames ?? Enumerable.Empty<string>());
             }
             else
             {
                 DependencyPicker.SetDiscovered(_projectModel.Repositories);
-                DependencyPicker.SetSelectedDependencies(selectedReferences);
+                DependencyPicker.SetSelectedDependencies(selectedReferences, _sessionState?.StandardDependencyNames ?? Enumerable.Empty<string>());
             }
         }
         finally
@@ -466,15 +556,43 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject,
         }
 
         _sessionState.RepositoryRefs.Clear();
+        _sessionState.StandardDependencyNames.Clear();
         foreach (var option in DependencyPicker.GetSelectedOptions())
         {
             if (option.Ref is not null)
             {
                 _sessionState.RepositoryRefs.Add(option.Ref);
             }
+            else if (!string.IsNullOrWhiteSpace(option.InterfaceName))
+            {
+                _sessionState.StandardDependencyNames.Add(option.InterfaceName);
+            }
         }
         OnPropertyChanged(nameof(HasUnsavedChanges));
         OnPropertyChanged(nameof(CanBuildPlan));
+    }
+
+    private GeneratorNode? FindOwnedCommittedChild(string relationshipName, GeneratorNodeKind kind)
+    {
+        return Node?.Children.FirstOrDefault(child =>
+            child.Kind == kind &&
+            child.Lifecycle == GeneratorNodeLifecycle.Committed &&
+            string.Equals(child.RelationshipName, relationshipName, StringComparison.Ordinal));
+    }
+
+    private bool HasOwnedCommittedChild(string relationshipName, GeneratorNodeKind kind)
+    {
+        return FindOwnedCommittedChild(relationshipName, kind) is not null;
+    }
+
+    private void NotifyFeatureCommands()
+    {
+        OnPropertyChanged(nameof(ShowCreateFeatureButton));
+        OnPropertyChanged(nameof(CanEditSelectedFeature));
+        OnPropertyChanged(nameof(CanRemoveSelectedFeature));
+        OpenCreateFeatureCommand.NotifyCanExecuteChanged();
+        EditSelectedFeatureCommand.NotifyCanExecuteChanged();
+        RemoveSelectedFeatureCommand.NotifyCanExecuteChanged();
     }
 
     private List<FeatureItemViewModel> BuildFeatureItems(ProjectModel project)
@@ -514,14 +632,6 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject,
 
     private static bool ArtifactRefEquals(ArtifactRef left, ArtifactRef right)
     {
-        if (left.NodeId.HasValue && right.NodeId.HasValue)
-        {
-            return left.NodeId == right.NodeId;
-        }
-
-        return left.Kind == right.Kind &&
-               left.Origin == right.Origin &&
-               string.Equals(left.Name, right.Name, StringComparison.OrdinalIgnoreCase) &&
-               string.Equals(left.FeaturePath, right.FeaturePath, StringComparison.OrdinalIgnoreCase);
+        return ArtifactKey.Equals(left, right);
     }
 }

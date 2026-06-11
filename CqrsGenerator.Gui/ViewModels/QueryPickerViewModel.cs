@@ -150,8 +150,8 @@ public sealed partial class QueryPickerViewModel : ObservableObject
             return item?.ToString() ?? string.Empty;
         }
 
-        return option.NodeId.HasValue
-            ? $"session:{option.NodeId.Value:D}"
-            : $"name:{option.Name}";
+        return option.Ref is not null
+            ? ArtifactKey.From(option.Ref).Value
+            : option.Name;
     }
 }

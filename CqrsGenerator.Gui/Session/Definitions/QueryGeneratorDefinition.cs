@@ -1,3 +1,5 @@
+using CqrsGenerator.Core.Configuration;
+using CqrsGenerator.Core.Discovery;
 using CqrsGenerator.Core.Generation;
 using CqrsGenerator.Gui.Models;
 using CqrsGenerator.Gui.Services;
@@ -57,7 +59,13 @@ public sealed class QueryGeneratorDefinition : GeneratorDefinition<QueryGenerato
         if (string.IsNullOrWhiteSpace(state.QueryName))
             return GeneratorValidationResult.Error("Query name is required.");
 
-        var resultDtoRef = session.References.GetRef(node.Id, "ResultDto");
+        if (state.FeatureRef is null)
+            return GeneratorValidationResult.Error("Feature is required.");
+
+        var resultDtoRef = state.ResultDtoRef;
+        if (resultDtoRef is null && string.IsNullOrWhiteSpace(state.CustomDtoName))
+            return GeneratorValidationResult.Error("Result DTO is required.");
+
         if (resultDtoRef?.IsFromSession == true &&
             resultDtoRef.NodeId.HasValue &&
             session.FindNode(resultDtoRef.NodeId.Value) is null)
@@ -97,9 +105,8 @@ public sealed class QueryGeneratorDefinition : GeneratorDefinition<QueryGenerato
         var planService = core.ServiceProvider.GetRequiredService<IAddQueryPlanService>();
         var queryServiceSuggestionService = core.ServiceProvider.GetRequiredService<IQueryServiceSuggestionService>();
 
-        var featureRef = session.References.GetRef(node.Id, "Feature");
-        var resultDtoRef = session.References.GetRef(node.Id, "ResultDto");
-        var dtoName = GetDtoName(state, session, node);
+        var featureRef = state.FeatureRef;
+        var dtoSelection = BuildDtoSelection(state, session, node);
         var dtoProperties = GetDtoProperties(state, session, node);
         var queryServiceSuggestion = ResolveQueryServiceSuggestion(
             state,
@@ -108,11 +115,10 @@ public sealed class QueryGeneratorDefinition : GeneratorDefinition<QueryGenerato
             queryServiceSuggestionService,
             node);
         var formState = new AddQueryFormState(
-            featureName: GetFeatureMetadata(state, session, node).FeatureName,
+            GetFeatureMetadata(state, session, node).FeatureName,
             featureRef?.FeaturePath,
             state.QueryName,
-            dtoName,
-            resultDtoRef?.IsFromSession == true,
+            dtoSelection,
             dtoProperties,
             state.ResponseShape,
             state.Parameters.ToArray(),
@@ -133,7 +139,7 @@ public sealed class QueryGeneratorDefinition : GeneratorDefinition<QueryGenerato
         IQueryServiceSuggestionService queryServiceSuggestionService,
         GeneratorNode node)
     {
-        var featureRef = session.References.GetRef(node.Id, "Feature");
+        var featureRef = state.FeatureRef;
         if (!state.CreateQueryServiceMethod || featureRef is null)
         {
             return null;
@@ -145,7 +151,7 @@ public sealed class QueryGeneratorDefinition : GeneratorDefinition<QueryGenerato
 
     private static (string? FeatureName, string? FeaturePath) GetFeatureMetadata(QueryGeneratorState state, GenerationSession session, GeneratorNode node)
     {
-        var featureRef = session.References.GetRef(node.Id, "Feature");
+        var featureRef = state.FeatureRef;
         if (featureRef is null)
         {
             return (null, null);
@@ -162,7 +168,7 @@ public sealed class QueryGeneratorDefinition : GeneratorDefinition<QueryGenerato
 
     private static IReadOnlyList<PropertySpec>? GetDtoProperties(QueryGeneratorState state, GenerationSession session, GeneratorNode node)
     {
-        var resultDtoRef = session.References.GetRef(node.Id, "ResultDto");
+        var resultDtoRef = state.ResultDtoRef;
         if (resultDtoRef?.NodeId is Guid nodeId)
         {
             var dtoNode = session.FindNode(nodeId);
@@ -172,26 +178,77 @@ public sealed class QueryGeneratorDefinition : GeneratorDefinition<QueryGenerato
         return null;
     }
 
-    private static string? GetDtoName(QueryGeneratorState state, GenerationSession session, GeneratorNode node)
+    private static QueryDtoSelectionState? BuildDtoSelection(QueryGeneratorState state, GenerationSession session, GeneratorNode node)
     {
-        var resultDtoRef = session.References.GetRef(node.Id, "ResultDto");
+        var resultDtoRef = state.ResultDtoRef;
         if (resultDtoRef is null)
-            return state.CustomDtoName;
-
-        if (resultDtoRef.IsFromProject || !resultDtoRef.NodeId.HasValue)
         {
-            return resultDtoRef.Name;
+            return string.IsNullOrWhiteSpace(state.CustomDtoName)
+                ? null
+                : new QueryDtoSelectionState(
+                    state.CustomDtoName.Trim(),
+                    null,
+                    null,
+                    DtoLocationKind.SharedFeatureDto,
+                    null,
+                    CreateNewLocalDto: false,
+                    IsSelectable: true,
+                    SelectionBlockedReason: null);
         }
 
-        var dtoNode = session.FindNode(resultDtoRef.NodeId.Value);
-        if (dtoNode?.State is DtoGeneratorState dtoState)
+        if (resultDtoRef.NodeId is Guid nodeId)
         {
-            var suffix = dtoState.SuffixIndex >= 0 && dtoState.SuffixIndex < 2
-                ? new[] { "", "Dto" }[dtoState.SuffixIndex]
-                : string.Empty;
-            return dtoState.BaseName + suffix;
+            var dtoNode = session.FindNode(nodeId);
+            var dtoName = dtoNode?.State is DtoGeneratorState dtoState
+                ? GetDtoName(dtoState)
+                : resultDtoRef.Name;
+
+            if (IsOwnedResultDto(node, nodeId))
+            {
+                return new QueryDtoSelectionState(
+                    dtoName,
+                    null,
+                    null,
+                    DtoLocationKind.LocalQueryDto,
+                    StringUtilities.StripSuffix(state.QueryName, GeneratorConstants.QuerySuffix),
+                    CreateNewLocalDto: true,
+                    IsSelectable: true,
+                    SelectionBlockedReason: null);
+            }
+
+            return new QueryDtoSelectionState(
+                dtoName,
+                resultDtoRef.Namespace,
+                resultDtoRef.ProjectPath,
+                string.IsNullOrWhiteSpace(resultDtoRef.OwnerName) ? DtoLocationKind.SharedFeatureDto : DtoLocationKind.LocalQueryDto,
+                resultDtoRef.OwnerName,
+                CreateNewLocalDto: false,
+                IsSelectable: true,
+                SelectionBlockedReason: null);
         }
 
-        return null;
+        return new QueryDtoSelectionState(
+            resultDtoRef.Name,
+            resultDtoRef.Namespace,
+            resultDtoRef.ProjectPath,
+            string.IsNullOrWhiteSpace(resultDtoRef.OwnerName) ? DtoLocationKind.SharedFeatureDto : DtoLocationKind.LocalQueryDto,
+            resultDtoRef.OwnerName,
+            CreateNewLocalDto: false,
+            IsSelectable: true,
+            SelectionBlockedReason: null);
+    }
+
+    private static bool IsOwnedResultDto(GeneratorNode queryNode, Guid dtoNodeId)
+    {
+        return queryNode.Children.Any(child =>
+            child.Id == dtoNodeId &&
+            child.Kind == GeneratorNodeKind.Dto &&
+            string.Equals(child.RelationshipName, "ResultDto", StringComparison.Ordinal));
+    }
+
+    private static string GetDtoName(DtoGeneratorState dtoState)
+    {
+        var suffix = dtoState.SuffixIndex == 1 ? GeneratorConstants.DtoSuffix : string.Empty;
+        return dtoState.BaseName + suffix;
     }
 }

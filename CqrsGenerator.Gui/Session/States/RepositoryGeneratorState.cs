@@ -1,3 +1,6 @@
+using System.Collections.ObjectModel;
+using CqrsGenerator.Core.Generation;
+
 namespace CqrsGenerator.Gui.Session.States;
 
 public sealed class RepositoryGeneratorState
@@ -51,6 +54,10 @@ public sealed class RepositoryGeneratorState
     }
 
     public bool AddDependencyInjectionRegistration { get; set; } = true;
+
+    public ObservableCollection<string> SelectedMethodPresetKeys { get; } = new();
+
+    public ObservableCollection<RepositoryMethodSpec> CustomMethods { get; } = new();
 
     private static ArtifactRef? CreateProjectFeatureRef(string? featurePath)
     {

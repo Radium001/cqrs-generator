@@ -15,7 +15,7 @@ public sealed class FeatureGeneratorDefinition : GeneratorDefinition<FeatureGene
 
     public override FeatureGeneratorState CreateInitialState(GeneratorCreationContext context)
     {
-        return new FeatureGeneratorState { FeatureName = "NewFeature" };
+        return new FeatureGeneratorState { FeatureName = "NewFeature", CreateWebFeature = true };
     }
 
     public override IGeneratorNodeEditorViewModel CreateEditor(

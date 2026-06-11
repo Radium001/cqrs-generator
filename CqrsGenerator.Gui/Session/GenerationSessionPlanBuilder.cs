@@ -30,10 +30,16 @@ public sealed class GenerationSessionPlanBuilder
     {
         var result = new GenerationPlan();
 
-        var orderedNodes = session.Roots
+        var treeOrder = session.Traverse()
+            .Select((node, index) => new { node.Id, index })
+            .ToDictionary(x => x.Id, x => x.index);
+
+        var orderedNodes = session.Traverse()
+            .Where(node => node.Lifecycle == GeneratorNodeLifecycle.Committed)
             .Where(node => node.Status is GeneratorNodeStatus.Valid or GeneratorNodeStatus.Ready)
+            .Where(node => ShouldBuildAsPlanNode(session, node))
             .OrderBy(node => GetBuildPriority(node.Kind))
-            .ThenBy(node => session.Roots.IndexOf(node))
+            .ThenBy(node => treeOrder.GetValueOrDefault(node.Id))
             .ToList();
 
         foreach (var node in orderedNodes)
@@ -61,6 +67,27 @@ public sealed class GenerationSessionPlanBuilder
         }
 
         return result;
+    }
+
+    private static bool ShouldBuildAsPlanNode(GenerationSession session, GeneratorNode node)
+    {
+        if (node.ParentId is null)
+        {
+            return true;
+        }
+
+        var parent = session.FindNode(node.ParentId.Value);
+        if (parent?.Kind == GeneratorNodeKind.Query &&
+            node.Kind == GeneratorNodeKind.Dto &&
+            string.Equals(node.RelationshipName, "ResultDto", StringComparison.Ordinal))
+        {
+            // Query-owned result DTOs are inline settings for AddQueryWorkflow's
+            // CreateLocalQueryDtoSelection. Building them as standalone DTO nodes
+            // would incorrectly place them in the shared DTOs folder.
+            return false;
+        }
+
+        return true;
     }
 
     private static int GetBuildPriority(GeneratorNodeKind kind)

@@ -83,17 +83,27 @@ public sealed class CommandGeneratorDefinition : GeneratorDefinition<CommandGene
     {
         var planService = core.ServiceProvider.GetRequiredService<IAddCommandPlanService>();
 
+        var dependencyNames = state.StandardDependencyNames
+            .Concat(state.RepositoryRefs.Select(reference => reference.Name))
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var dependencies = dependencyNames
+            .Select(name => new CommandHandlerDependency(name, GenerationNaming.ToDependencyName(name)))
+            .ToArray();
+
         var formState = new AddCommandFormState(
-            null,
+            state.FeatureRef?.DisplayName ?? state.FeatureRef?.Name,
             state.FeatureRef?.FeaturePath,
             state.CommandName,
             state.ResponseType,
             state.Parameters
                 .Select(p => new PropertySpec(p.Type, p.Name))
                 .ToArray(),
-            Array.Empty<CommandHandlerDependency>(),
+            dependencies,
             Array.Empty<object>(),
-            false);
+            state.UpdateWebImports);
 
         return planService.BuildPlan(core.WorkspaceContext, formState);
     }

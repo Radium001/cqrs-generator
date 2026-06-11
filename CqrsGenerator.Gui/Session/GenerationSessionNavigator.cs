@@ -1,4 +1,4 @@
-using System.Linq;
+using CqrsGenerator.Gui.Session.States;
 
 namespace CqrsGenerator.Gui.Session;
 
@@ -65,11 +65,16 @@ public sealed class GenerationSessionNavigator : IGenerationSessionNavigator
             return false;
         }
 
-        var usages = _session.References.FindTargeting(nodeId);
+        var usages = _session.Relations.FindTargeting(nodeId)
+            .Where(edge => !IsOwnershipEdgeFor(edge, node))
+            .ToList();
         if (usages.Count > 0)
         {
             return false;
         }
+
+        ClearReferencesToNode(nodeId, includeOwnership: true);
+        ClearReferencesFromNode(nodeId);
 
         if (node.ParentId is null)
         {
@@ -83,16 +88,112 @@ public sealed class GenerationSessionNavigator : IGenerationSessionNavigator
                 return false;
         }
 
-        _session.References.ClearAllForSource(nodeId);
         return true;
     }
 
     public IReadOnlyList<NodeUsage> FindUsages(Guid nodeId)
     {
-        return _session.References.FindTargeting(nodeId)
-            .Select(entry => new NodeUsage(
-                _session.FindNode(entry.SourceId) ?? throw new InvalidOperationException($"Source node {entry.SourceId} not found"),
-                entry.Relationship))
+        return _session.Relations.FindTargeting(nodeId)
+            .Select(edge => new NodeUsage(
+                _session.FindNode(edge.SourceNodeId) ?? throw new InvalidOperationException($"Source node {edge.SourceNodeId} not found"),
+                edge.Relationship))
             .ToList();
+    }
+
+    private bool IsOwnershipEdgeFor(ArtifactReferenceEdge edge, GeneratorNode target)
+    {
+        return edge.IsOwnership && target.ParentId == edge.SourceNodeId;
+    }
+
+    private void ClearReferencesToNode(Guid nodeId, bool includeOwnership)
+    {
+        foreach (var edge in _session.Relations.FindTargeting(nodeId))
+        {
+            if (!includeOwnership && edge.IsOwnership)
+            {
+                continue;
+            }
+
+            var source = _session.FindNode(edge.SourceNodeId);
+            if (source is not null)
+            {
+                ClearReference(source, edge.Relationship, nodeId);
+            }
+        }
+    }
+
+    private void ClearReferencesFromNode(Guid nodeId)
+    {
+        var source = _session.FindNode(nodeId);
+        if (source is null)
+        {
+            return;
+        }
+
+        switch (source.State)
+        {
+            case QueryGeneratorState state:
+                state.FeatureRef = null;
+                state.ResultDtoRef = null;
+                break;
+            case DtoGeneratorState state:
+                state.FeatureRef = null;
+                break;
+            case RepositoryGeneratorState state:
+                state.FeatureRef = null;
+                state.EntityRef = null;
+                break;
+            case CommandGeneratorState state:
+                state.FeatureRef = null;
+                state.RepositoryRefs.Clear();
+                state.StandardDependencyNames.Clear();
+                break;
+            case WebPageGeneratorState state:
+                state.FeatureRef = null;
+                state.QueryRefs.Clear();
+                break;
+        }
+    }
+
+    private static void ClearReference(GeneratorNode source, string relationship, Guid targetNodeId)
+    {
+        switch (source.State)
+        {
+            case QueryGeneratorState state when relationship == "Feature" && state.FeatureRef?.NodeId == targetNodeId:
+                state.FeatureRef = null;
+                break;
+            case QueryGeneratorState state when relationship == "ResultDto" && state.ResultDtoRef?.NodeId == targetNodeId:
+                state.ResultDtoRef = null;
+                break;
+            case DtoGeneratorState state when relationship == "Feature" && state.FeatureRef?.NodeId == targetNodeId:
+                state.FeatureRef = null;
+                break;
+            case RepositoryGeneratorState state when relationship == "Feature" && state.FeatureRef?.NodeId == targetNodeId:
+                state.FeatureRef = null;
+                break;
+            case RepositoryGeneratorState state when relationship == "Entity" && state.EntityRef?.NodeId == targetNodeId:
+                state.EntityRef = null;
+                break;
+            case CommandGeneratorState state when relationship == "Feature" && state.FeatureRef?.NodeId == targetNodeId:
+                state.FeatureRef = null;
+                break;
+            case CommandGeneratorState state when relationship == "Repository":
+                RemoveMatching(state.RepositoryRefs, targetNodeId);
+                break;
+            case WebPageGeneratorState state when relationship == "Feature" && state.FeatureRef?.NodeId == targetNodeId:
+                state.FeatureRef = null;
+                break;
+            case WebPageGeneratorState state when relationship == "Query":
+                RemoveMatching(state.QueryRefs, targetNodeId);
+                break;
+        }
+    }
+
+    private static void RemoveMatching(ICollection<ArtifactRef> refs, Guid nodeId)
+    {
+        foreach (var reference in refs.Where(r => r.NodeId == nodeId).ToList())
+        {
+            refs.Remove(reference);
+        }
     }
 }

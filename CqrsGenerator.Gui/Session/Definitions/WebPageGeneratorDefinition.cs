@@ -78,15 +78,47 @@ public sealed class WebPageGeneratorDefinition : GeneratorDefinition<WebPageGene
     {
         var planService = core.ServiceProvider.GetRequiredService<IAddWebPagePlanService>();
 
+        var bindings = state.QueryRefs
+            .Select(reference => BuildQueryBinding(reference, session))
+            .Where(binding => binding is not null)
+            .Select(binding => binding!)
+            .ToArray();
+
         var formState = new AddWebPageFormState(
             state.FeatureRef?.FeaturePath,
-            null,
+            state.FeatureRef?.DisplayName ?? state.FeatureRef?.Name,
             state.PageName,
             state.Route,
-            false,
-            Array.Empty<WebPageQueryBindingState>(),
+            state.CreateImports,
+            bindings,
             Array.Empty<AddQueryFormState>());
 
         return planService.BuildPlan(core.WorkspaceContext, formState);
+    }
+    private static WebPageQueryBindingState? BuildQueryBinding(ArtifactRef reference, GenerationSession session)
+    {
+        if (reference.NodeId is Guid nodeId && session.FindNode(nodeId)?.State is QueryGeneratorState queryState)
+        {
+            var dtoName = ResolveQueryDtoName(queryState, session) ?? string.Empty;
+            return new WebPageQueryBindingState(queryState.QueryName, dtoName, string.Empty, queryState.ResponseShape, HasRefresh: true);
+        }
+
+        return new WebPageQueryBindingState(reference.Name, string.Empty, string.Empty, ResponseShape.Single, HasRefresh: true);
+    }
+
+    private static string? ResolveQueryDtoName(QueryGeneratorState queryState, GenerationSession session)
+    {
+        var reference = queryState.ResultDtoRef;
+        if (reference is null)
+        {
+            return queryState.CustomDtoName;
+        }
+
+        if (reference.NodeId is Guid nodeId && session.FindNode(nodeId)?.State is DtoGeneratorState dtoState)
+        {
+            return dtoState.BaseName + (dtoState.SuffixIndex == 1 ? GeneratorConstants.DtoSuffix : string.Empty);
+        }
+
+        return reference.Name;
     }
 }

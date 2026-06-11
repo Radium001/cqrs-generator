@@ -25,5 +25,9 @@ public sealed class DtoGeneratorState
 
     public int SuffixIndex { get; set; }
 
+    public string? Subfolder { get; set; }
+
+    public bool UpdateWebImports { get; set; } = true;
+
     public ObservableCollection<PropertySpec> Properties { get; } = new();
 }

@@ -6,5 +6,5 @@ public sealed class FeatureGeneratorState
 
     public string? Subfolder { get; set; }
 
-    public bool CreateWebFeature { get; set; }
+    public bool CreateWebFeature { get; set; } = true;
 }

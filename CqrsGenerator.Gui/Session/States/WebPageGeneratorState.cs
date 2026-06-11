@@ -30,6 +30,8 @@ public sealed class WebPageGeneratorState
 
     public string Route { get; set; } = string.Empty;
 
+    public bool CreateImports { get; set; } = true;
+
     public ObservableCollection<ArtifactRef> QueryRefs { get; } = new();
 
     public ObservableCollection<Guid> QueryNodeIds { get; } = new();

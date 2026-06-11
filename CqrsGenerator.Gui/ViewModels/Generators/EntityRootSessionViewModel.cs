@@ -22,10 +22,11 @@ public sealed partial class EntityRootSessionViewModel : ObservableObject,
     private readonly IAddEntityScenarioOutlineBuilder _scenarioOutlineBuilder;
     private readonly EfEntityPreparationService _efEntityPreparationService;
     private readonly bool _isStandalone;
-    private readonly EntityGeneratorState? _sessionState;
+    private EntityGeneratorState? _sessionState;
     private readonly Dictionary<string, EfEntityCandidate> _efEntityByName = new(StringComparer.Ordinal);
     private ProjectModel? _projectModel;
     private bool _isSyncingName;
+    private bool _isLoadingFromState;
     private bool _isApplyingSuggestedEntityName;
     private bool _hasManualEntityNameOverride;
 
@@ -70,6 +71,7 @@ public sealed partial class EntityRootSessionViewModel : ObservableObject,
         };
         SubfolderPickerConfiguration.Configure(SubfolderPicker);
         SubfolderPicker.Items = new List<string> { "(root folder)" };
+        SubfolderPicker.PropertyChanged += OnSubfolderPickerChanged;
 
         EntityNameCyclic = new CyclicInputViewModel
         {
@@ -93,11 +95,7 @@ public sealed partial class EntityRootSessionViewModel : ObservableObject,
 
         if (_sessionState is not null)
         {
-            EntityNameCyclic.Text = _sessionState.EntityName;
-            foreach (var property in _sessionState.Properties)
-            {
-                AddProperty(property.Type, property.Name);
-            }
+            LoadFromSessionState(_sessionState);
         }
         else
         {
@@ -195,6 +193,19 @@ public sealed partial class EntityRootSessionViewModel : ObservableObject,
     [NotifyPropertyChangedFor(nameof(HasUnsavedChanges))]
     private bool _generateEfMapping;
 
+
+    partial void OnGenerateFactoryMethodChanged(bool value)
+    {
+        SyncToSessionState();
+        OnPropertyChanged(nameof(HasUnsavedChanges));
+    }
+
+    partial void OnGenerateEfMappingChanged(bool value)
+    {
+        SyncToSessionState();
+        OnPropertyChanged(nameof(HasUnsavedChanges));
+    }
+
     public bool IsEfEntityMode => SelectedSourceMode == EntitySourceMode.EfEntity;
 
     public bool IsManualMode => SelectedSourceMode == EntitySourceMode.Manual;
@@ -203,6 +214,20 @@ public sealed partial class EntityRootSessionViewModel : ObservableObject,
     {
         get => IsEfEntityMode;
         set => SelectedSourceMode = value ? EntitySourceMode.EfEntity : EntitySourceMode.Manual;
+    }
+
+
+    public void SetGenerationSession(GenerationSession session)
+    {
+        if (Node?.State is EntityGeneratorState state)
+        {
+            _sessionState = state;
+            LoadFromSessionState(state);
+            if (_isStandalone)
+            {
+                SyncToSessionState();
+            }
+        }
     }
 
     public IReadOnlyList<ScenarioNodeViewModel> GetScenarioNodes()
@@ -226,6 +251,7 @@ public sealed partial class EntityRootSessionViewModel : ObservableObject,
         }
 
         SubfolderPicker.Items = subfolders;
+        RestoreSubfolderSelection(_sessionState?.Subfolder);
 
         _efEntityByName.Clear();
         var candidates = workspaceContext?.Config is null
@@ -280,6 +306,7 @@ public sealed partial class EntityRootSessionViewModel : ObservableObject,
             EfPropertyPicker.DeselectAllCommand.Execute(null);
             EfPropertyPicker.SetDiscovered(Array.Empty<EfEntityProperty>());
             _hasManualEntityNameOverride = false;
+            SyncToSessionState();
             return;
         }
 
@@ -288,6 +315,8 @@ public sealed partial class EntityRootSessionViewModel : ObservableObject,
         {
             ApplySuggestedEntityName(SelectedEfEntity.Name);
         }
+
+        SyncToSessionState();
     }
 
     partial void OnSelectedEfEntityChanged(EfEntityCandidate? value)
@@ -298,6 +327,7 @@ public sealed partial class EntityRootSessionViewModel : ObservableObject,
             ApplySuggestedEntityName(value.Name);
         }
 
+        SyncToSessionState();
         OnPropertyChanged(nameof(CanBuildPlan));
         OnPropertyChanged(nameof(CanComplete));
         OnPropertyChanged(nameof(HasUnsavedChanges));
@@ -305,6 +335,7 @@ public sealed partial class EntityRootSessionViewModel : ObservableObject,
 
     partial void OnRenameEfIdentifierPropertiesChanged(bool value)
     {
+        SyncToSessionState();
         OnPropertyChanged(nameof(HasUnsavedChanges));
     }
 
@@ -334,6 +365,16 @@ public sealed partial class EntityRootSessionViewModel : ObservableObject,
 
     private bool AreEntriesComplete => ManualProperties.All(property => property.IsComplete);
 
+
+    private void OnSubfolderPickerChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(WrappedListPickerViewModel.SelectedItem) or nameof(WrappedListPickerViewModel.SearchText))
+        {
+            SyncToSessionState();
+            OnPropertyChanged(nameof(HasUnsavedChanges));
+        }
+    }
+
     private void OnEfEntityPickerChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(WrappedListPickerViewModel.SelectedItem))
@@ -344,6 +385,7 @@ public sealed partial class EntityRootSessionViewModel : ObservableObject,
 
     private void OnEfPropertySelectionChanged()
     {
+        SyncToSessionState();
         OnPropertyChanged(nameof(HasUnsavedChanges));
         OnPropertyChanged(nameof(CanBuildPlan));
         OnPropertyChanged(nameof(CanComplete));
@@ -408,12 +450,63 @@ public sealed partial class EntityRootSessionViewModel : ObservableObject,
 
     private void SyncToSessionState()
     {
-        if (_sessionState is null) return;
-        _sessionState.EntityName = EntityName.Trim();
+        if (_sessionState is null || _isLoadingFromState) return;
+        _sessionState.SourceMode = SelectedSourceMode;
+        _sessionState.SelectedEfEntity = SelectedEfEntity;
+        _sessionState.SelectedEfPropertyNames.Clear();
+        foreach (var key in EfPropertyPicker.SelectedKeys)
+        {
+            _sessionState.SelectedEfPropertyNames.Add(key);
+        }
+
+        _sessionState.RenameEfIdentifierProperties = RenameEfIdentifierProperties;
+        _sessionState.EntityName = EntityNameCyclic.FullText.Trim();
+        _sessionState.Subfolder = GetSubfolder();
+        _sessionState.GenerateFactoryMethod = GenerateFactoryMethod;
+        _sessionState.GenerateEfMapping = GenerateEfMapping;
         _sessionState.Properties.Clear();
         foreach (var p in ManualProperties.Where(p => p.IsComplete))
         {
             _sessionState.Properties.Add(new PropertySpec(p.Type.Trim(), p.Name.Trim()));
+        }
+    }
+
+    private void LoadFromSessionState(EntityGeneratorState state)
+    {
+        _isLoadingFromState = true;
+        try
+        {
+            SelectedSourceMode = state.SourceMode;
+            SelectedEfEntity = state.SelectedEfEntity;
+            RenameEfIdentifierProperties = state.RenameEfIdentifierProperties;
+            GenerateFactoryMethod = state.GenerateFactoryMethod;
+            GenerateEfMapping = state.GenerateEfMapping;
+            EntityNameCyclic.Text = state.EntityName;
+            EntityName = EntityNameCyclic.FullText;
+            ManualProperties.Clear();
+            foreach (var property in state.Properties.ToArray())
+            {
+                var propertyViewModel = new PropertyEntryViewModel(property.Type, property.Name);
+                propertyViewModel.PropertyChanged += OnManualPropertyChanged;
+                ManualProperties.Add(propertyViewModel);
+            }
+
+            if (ManualProperties.Count == 0)
+            {
+                var propertyViewModel = new PropertyEntryViewModel("string", "Property1");
+                propertyViewModel.PropertyChanged += OnManualPropertyChanged;
+                ManualProperties.Add(propertyViewModel);
+            }
+
+            if (state.SelectedEfEntity is not null)
+            {
+                _pendingEfEntityName = state.SelectedEfEntity.Name;
+                _pendingEfPropertyNames = state.SelectedEfPropertyNames.ToArray();
+            }
+        }
+        finally
+        {
+            _isLoadingFromState = false;
         }
     }
 
@@ -461,6 +554,31 @@ public sealed partial class EntityRootSessionViewModel : ObservableObject,
                 .Select(property => new PropertySpec(property.Type.Trim(), property.Name.Trim()))
                 .ToArray(),
             []);
+    }
+
+
+    private void RestoreSubfolderSelection(string? savedSubfolder)
+    {
+        if (string.IsNullOrWhiteSpace(savedSubfolder))
+        {
+            SubfolderPicker.SearchText = string.Empty;
+            if (SubfolderPicker.Items.Count > 0)
+            {
+                SubfolderPicker.SelectRawItem(SubfolderPicker.Items[0]);
+            }
+            return;
+        }
+
+        var existing = SubfolderPicker.Items.Cast<string>()
+            .FirstOrDefault(item => string.Equals(item, savedSubfolder, StringComparison.OrdinalIgnoreCase));
+        if (existing is not null)
+        {
+            SubfolderPicker.SearchText = string.Empty;
+            SubfolderPicker.SelectRawItem(existing);
+            return;
+        }
+
+        SubfolderPicker.SearchText = savedSubfolder;
     }
 
     private string? GetSubfolder()

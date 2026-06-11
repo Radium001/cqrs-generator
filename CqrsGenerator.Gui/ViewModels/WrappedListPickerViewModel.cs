@@ -53,6 +53,8 @@ public partial class WrappedListPickerViewModel : ObservableObject
     private string _customEntryLabel = "Custom...";
 
     private object? _lockedOriginalItem;
+    private string? _lockedKey;
+    private string? _selectedKey;
 
     public Func<object?, string>? ItemNameSelector { get; set; }
     public Func<object?, string?>? ItemPrimaryTextSelector { get; set; }
@@ -61,6 +63,7 @@ public partial class WrappedListPickerViewModel : ObservableObject
     public Func<object?, bool>? ItemSelectableSelector { get; set; }
     public Func<object?, string?>? ItemSelectionBlockedReasonSelector { get; set; }
     public Func<object?, string>? ItemSearchTextSelector { get; set; }
+    public Func<object?, string>? ItemKeySelector { get; set; }
 
     public bool IsSearchReadOnly => IsSelectionLocked;
 
@@ -122,9 +125,9 @@ public partial class WrappedListPickerViewModel : ObservableObject
     {
         get
         {
-            if (IsSelectionLocked && _lockedOriginalItem is not null)
+            if (IsSelectionLocked && !string.IsNullOrWhiteSpace(_lockedKey))
             {
-                return _allWrapped.Where(w => !w.IsCustom && ReferenceEquals(w.OriginalItem, _lockedOriginalItem));
+                return _allWrapped.Where(w => !w.IsCustom && string.Equals(GetItemKey(w.OriginalItem), _lockedKey, StringComparison.Ordinal));
             }
 
             var search = (SearchText ?? "").Trim();
@@ -203,9 +206,19 @@ public partial class WrappedListPickerViewModel : ObservableObject
         OnPropertyChanged(nameof(SearchWatermark));
         OnPropertyChanged(nameof(SelectedBaseName));
 
-        if (IsSelectionLocked && _lockedOriginalItem is not null && value?.OriginalItem != _lockedOriginalItem)
+        if (value?.OriginalItem is not null)
         {
-            var match = _allWrapped.FirstOrDefault(w => !w.IsCustom && ReferenceEquals(w.OriginalItem, _lockedOriginalItem));
+            _selectedKey = GetItemKey(value.OriginalItem);
+        }
+        else if (value?.IsCustom == true)
+        {
+            _selectedKey = null;
+        }
+
+        if (IsSelectionLocked && !string.IsNullOrWhiteSpace(_lockedKey) &&
+            !string.Equals(GetItemKey(value?.OriginalItem), _lockedKey, StringComparison.Ordinal))
+        {
+            var match = _allWrapped.FirstOrDefault(w => !w.IsCustom && string.Equals(GetItemKey(w.OriginalItem), _lockedKey, StringComparison.Ordinal));
             if (match is not null)
             {
                 _selectedItem = match;
@@ -250,6 +263,7 @@ public partial class WrappedListPickerViewModel : ObservableObject
     private void RebuildWrappedItems()
     {
         var previousSelection = SelectedItem;
+        var previousKey = _selectedKey ?? (previousSelection?.OriginalItem is not null ? GetItemKey(previousSelection.OriginalItem) : null);
 
         _allWrapped.Clear();
 
@@ -285,9 +299,9 @@ public partial class WrappedListPickerViewModel : ObservableObject
         OnPropertyChanged(nameof(FilteredItems));
 
         // If locked, force selection back to locked item
-        if (IsSelectionLocked && _lockedOriginalItem is not null)
+        if (IsSelectionLocked && !string.IsNullOrWhiteSpace(_lockedKey))
         {
-            var match = _allWrapped.FirstOrDefault(w => !w.IsCustom && ReferenceEquals(w.OriginalItem, _lockedOriginalItem));
+            var match = _allWrapped.FirstOrDefault(w => !w.IsCustom && string.Equals(GetItemKey(w.OriginalItem), _lockedKey, StringComparison.Ordinal));
             if (match is not null)
             {
                 SelectedItem = match;
@@ -297,12 +311,14 @@ public partial class WrappedListPickerViewModel : ObservableObject
 
         if (previousSelection is not null)
         {
-            // Don't restore custom selection if regular items are now available
+            // Don't restore custom selection if regular items are now available.
             if (!previousSelection.IsCustom || !_allWrapped.Any(w => !w.IsCustom))
             {
-                var match = _allWrapped.FirstOrDefault(w =>
-                    ReferenceEquals(w.OriginalItem, previousSelection.OriginalItem) &&
-                    w.IsCustom == previousSelection.IsCustom);
+                var match = !string.IsNullOrWhiteSpace(previousKey)
+                    ? _allWrapped.FirstOrDefault(w => !w.IsCustom && string.Equals(GetItemKey(w.OriginalItem), previousKey, StringComparison.Ordinal))
+                    : _allWrapped.FirstOrDefault(w =>
+                        ReferenceEquals(w.OriginalItem, previousSelection.OriginalItem) &&
+                        w.IsCustom == previousSelection.IsCustom);
                 if (match is not null)
                 {
                     SelectedItem = match;
@@ -333,7 +349,21 @@ public partial class WrappedListPickerViewModel : ObservableObject
             return;
         }
 
-        var match = _allWrapped.FirstOrDefault(w => !w.IsCustom && ReferenceEquals(w.OriginalItem, rawItem));
+        var key = GetItemKey(rawItem);
+        SelectByKey(key);
+    }
+
+    public void SelectByKey(string? key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            SelectedItem = null;
+            _selectedKey = null;
+            return;
+        }
+
+        _selectedKey = key;
+        var match = _allWrapped.FirstOrDefault(w => !w.IsCustom && string.Equals(GetItemKey(w.OriginalItem), key, StringComparison.Ordinal));
         if (match is not null)
             SelectedItem = match;
     }
@@ -341,16 +371,41 @@ public partial class WrappedListPickerViewModel : ObservableObject
     public void LockSelection(object originalItem)
     {
         _lockedOriginalItem = originalItem;
+        _lockedKey = GetItemKey(originalItem);
         var name = ItemNameSelector?.Invoke(originalItem) ?? originalItem.ToString() ?? "";
         IsSelectionLocked = true;
         SearchText = name;
-        SelectRawItem(originalItem);
+        SelectByKey(_lockedKey);
     }
 
-    public void UnlockSelection()
+    public void LockSelectionByKey(string key, string displayText)
     {
         _lockedOriginalItem = null;
+        _lockedKey = key;
+        IsSelectionLocked = true;
+        SearchText = displayText;
+        SelectByKey(key);
+    }
+
+    public void UnlockSelection(bool clearSearchText = false)
+    {
+        _lockedOriginalItem = null;
+        _lockedKey = null;
         IsSelectionLocked = false;
+        if (clearSearchText)
+        {
+            SearchText = string.Empty;
+            SelectedItem = null;
+            _selectedKey = null;
+        }
+    }
+
+    private string GetItemKey(object? item)
+    {
+        return ItemKeySelector?.Invoke(item)
+            ?? ItemNameSelector?.Invoke(item)
+            ?? item?.ToString()
+            ?? string.Empty;
     }
 
     public void RefreshFilteredItems()
