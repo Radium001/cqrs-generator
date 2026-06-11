@@ -42,6 +42,15 @@
               </MenuItem.Icon>
             </MenuItem>
           </MenuItem>
+          <MenuItem Header="_Updates">
+            <MenuItem Header="{Binding Updates.VersionSummary}"
+                      IsEnabled="False" />
+            <Separator />
+            <MenuItem Header="_Check for updates"
+                      Command="{Binding Updates.CheckForUpdatesCommand}" />
+            <MenuItem Header="_Download and restart"
+                      Command="{Binding Updates.DownloadAndInstallUpdateCommand}" />
+          </MenuItem>
         </MenuItem>
       </Menu>
 
@@ -53,6 +62,26 @@
                    Text="{Binding TargetRootPath}"
                    TextTrimming="CharacterEllipsis"
                    Foreground="{DynamicResource TextMutedBrush}" />
+        <StackPanel Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="6">
+          <TextBlock Text="{Binding Updates.BadgeText}"
+                     IsVisible="{Binding Updates.IsLatest}"
+                     Foreground="{DynamicResource TextCreateBrush}"
+                     FontSize="12" />
+          <TextBlock Text="{Binding Updates.BadgeText}"
+                     IsVisible="{Binding Updates.IsUpdateAvailable}"
+                     Foreground="{DynamicResource TextUpdateBrush}"
+                     FontSize="12" />
+          <TextBlock Text="{Binding Updates.BadgeText}"
+                     IsVisible="{Binding Updates.IsDownloadingStatus}"
+                     Foreground="{DynamicResource TextAccentBrush}"
+                     FontSize="12" />
+          <TextBlock Text="{Binding Updates.BadgeText}"
+                     IsVisible="{Binding Updates.IsStatusMuted}"
+                     Foreground="{DynamicResource TextMutedBrush}"
+                     FontSize="12" />
+        </StackPanel>
       </StackPanel>
     </Grid>
   </Border>

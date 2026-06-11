@@ -9,9 +9,10 @@ public sealed partial class MainMenuViewModel : ObservableObject
 {
     private readonly IThemeService _themeService;
 
-    public MainMenuViewModel(IThemeService themeService)
+    public MainMenuViewModel(IThemeService themeService, AppUpdateViewModel updates)
     {
         _themeService = themeService;
+        Updates = updates;
 
         ThemeOptions = new ObservableCollection<ThemeOptionViewModel>
         {
@@ -43,9 +44,14 @@ public sealed partial class MainMenuViewModel : ObservableObject
     private bool _isScanning;
 
     [ObservableProperty]
+    private bool _isApplyingPlan;
+
+    [ObservableProperty]
     private ThemeOptionViewModel _selectedTheme;
 
     public ObservableCollection<ThemeOptionViewModel> ThemeOptions { get; }
+
+    public AppUpdateViewModel Updates { get; }
 
     public IAsyncRelayCommand? OpenProjectCommand { get; set; }
 
@@ -57,7 +63,7 @@ public sealed partial class MainMenuViewModel : ObservableObject
 
     public IRelayCommand SetDarkThemeCommand { get; }
 
-    public bool CanRescan => IsProjectLoaded && !IsScanning;
+    public bool CanRescan => IsProjectLoaded && !IsScanning && !IsApplyingPlan;
 
     public bool IsSystemThemeSelected => SelectedTheme.Mode == ThemeMode.System;
 
@@ -76,6 +82,8 @@ public sealed partial class MainMenuViewModel : ObservableObject
     partial void OnIsProjectLoadedChanged(bool value) => OnPropertyChanged(nameof(CanRescan));
 
     partial void OnIsScanningChanged(bool value) => OnPropertyChanged(nameof(CanRescan));
+
+    partial void OnIsApplyingPlanChanged(bool value) => OnPropertyChanged(nameof(CanRescan));
 
     private void ApplyTheme(ThemeMode mode)
     {

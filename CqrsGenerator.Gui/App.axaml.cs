@@ -6,6 +6,7 @@ using CqrsGenerator.Core.Generation;
 using CqrsGenerator.Core.Workflows;
 using CqrsGenerator.Gui.Services;
 using CqrsGenerator.Gui.Services.Generators;
+using CqrsGenerator.Gui.Services.Updates;
 using CqrsGenerator.Gui.Session;
 using CqrsGenerator.Gui.Session.Definitions;
 using CqrsGenerator.Gui.ViewModels;
@@ -31,8 +32,10 @@ public partial class App : Application
             ConfigureServices(services, mainWindow);
 
             var serviceProvider = services.BuildServiceProvider();
-            mainWindow.DataContext = serviceProvider.GetRequiredService<MainWindowViewModel>();
+            var mainWindowViewModel = serviceProvider.GetRequiredService<MainWindowViewModel>();
+            mainWindow.DataContext = mainWindowViewModel;
             desktop.MainWindow = mainWindow;
+            _ = mainWindowViewModel.InitializeAsync();
         }
 
         base.OnFrameworkInitializationCompleted();
@@ -42,6 +45,9 @@ public partial class App : Application
     {
         services.AddSingleton<IThemeService>(_ => new ThemeService(this));
         services.AddSingleton<IWorkspaceStore, WorkspaceStore>();
+        services.AddSingleton(AppUpdateOptions.FromAssemblyMetadata());
+        services.AddSingleton<IAppUpdateService, AppUpdateService>();
+        services.AddSingleton<AppUpdateViewModel>();
         services.AddSingleton<CoreWorkflowFactory>();
         services.AddSingleton<EfEntityPreparationService>();
         services.AddSingleton<PlanPreparationService>();

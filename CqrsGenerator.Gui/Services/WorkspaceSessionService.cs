@@ -111,6 +111,8 @@ public sealed class WorkspaceSessionService : IWorkspaceSessionService
             return;
         }
 
+        _workspaceStore.SetState(TransitionApplyStarted(currentState));
+
         var applyResult = await _workspaceApplyService.ApplyPlanAsync(preparedPackage, cancellationToken);
         if (!applyResult.Succeeded)
         {
@@ -188,6 +190,7 @@ public sealed class WorkspaceSessionService : IWorkspaceSessionService
             PlanBuildStatus = result.PlanBuildStatus,
             PlanBuildErrorMessage = result.ErrorMessage,
             LastErrorDetails = result.ErrorDetails,
+            IsApplyingPlan = false,
             StatusText = result.StatusText,
             ApplyResultMessage = null
         };
@@ -208,6 +211,7 @@ public sealed class WorkspaceSessionService : IWorkspaceSessionService
         return RecomputeCapabilities(currentState with
         {
             IsScanning = true,
+            IsApplyingPlan = false,
             StatusText = statusText,
             PlanBuildErrorMessage = null,
             LastErrorDetails = null
@@ -225,6 +229,7 @@ public sealed class WorkspaceSessionService : IWorkspaceSessionService
             ProjectModel = result.ProjectModel,
             IsProjectLoaded = true,
             IsScanning = false,
+            IsApplyingPlan = false,
             StatusText = result.StatusText,
             GenerationWarnings = [],
             Warnings = warnings
@@ -249,6 +254,7 @@ public sealed class WorkspaceSessionService : IWorkspaceSessionService
             StatusText = statusText,
             IsProjectLoaded = false,
             IsScanning = false,
+            IsApplyingPlan = false,
             ApplyResultMessage = null,
             Warnings = []
         }, null);
@@ -261,6 +267,7 @@ public sealed class WorkspaceSessionService : IWorkspaceSessionService
         return RecomputeCapabilities(currentState with
         {
             PlanBuildStatus = PlanBuildStatus.Building,
+            IsApplyingPlan = false,
             PlanBuildErrorMessage = null,
             LastErrorDetails = null,
             ApplyResultMessage = null,
@@ -270,10 +277,22 @@ public sealed class WorkspaceSessionService : IWorkspaceSessionService
         }, rootSession);
     }
 
+
+    private static WorkspaceState TransitionApplyStarted(WorkspaceState currentState)
+    {
+        return RecomputeCapabilities(currentState with
+        {
+            IsApplyingPlan = true,
+            StatusText = "Applying plan...",
+            ApplyResultMessage = null
+        }, null);
+    }
+
     private static WorkspaceState TransitionApplyBlocked(WorkspaceState currentState, string statusText)
     {
         return RecomputeCapabilities(currentState with
         {
+            IsApplyingPlan = false,
             ApplyResultMessage = statusText
         }, null);
     }
@@ -288,6 +307,7 @@ public sealed class WorkspaceSessionService : IWorkspaceSessionService
             CurrentPreparedApplyPackage = null,
             CurrentPlanPreviewSnapshot = PlanPreviewSnapshot.Error(errorMessage),
             GenerationWarnings = [],
+            IsApplyingPlan = false,
             ApplyResultMessage = statusText,
             PlanBuildErrorMessage = errorMessage
         }, null);
@@ -297,6 +317,7 @@ public sealed class WorkspaceSessionService : IWorkspaceSessionService
     {
         return RecomputeCapabilities(currentState with
         {
+            IsApplyingPlan = false,
             ApplyResultMessage = statusText
         }, null);
     }
@@ -310,6 +331,7 @@ public sealed class WorkspaceSessionService : IWorkspaceSessionService
         {
             CurrentPreparedApplyPackage = null,
             GenerationWarnings = [],
+            IsApplyingPlan = false,
             ApplyResultMessage = statusText,
             PlanBuildErrorMessage = errorMessage,
             LastErrorDetails = errorMessage
@@ -326,6 +348,7 @@ public sealed class WorkspaceSessionService : IWorkspaceSessionService
             Config = result.Config,
             ProjectModel = result.ProjectModel,
             IsProjectLoaded = true,
+            IsApplyingPlan = false,
             StatusText = "Plan applied.",
             ApplyResultMessage = "Plan applied and project rescanned.",
             GenerationWarnings = [],
@@ -350,7 +373,8 @@ public sealed class WorkspaceSessionService : IWorkspaceSessionService
             StatusText = statusText,
             ApplyResultMessage = statusText,
             IsProjectLoaded = false,
-            IsScanning = false
+            IsScanning = false,
+            IsApplyingPlan = false
         }, null);
     }
 
@@ -358,10 +382,12 @@ public sealed class WorkspaceSessionService : IWorkspaceSessionService
     {
         var canBuild =
             !state.IsScanning &&
+            !state.IsApplyingPlan &&
             state.ProjectContext is not null &&
             rootSession is IGeneratorNodeEditorViewModel { Node: not null };
         var canApply =
             !state.IsScanning
+            && !state.IsApplyingPlan
             && state.CurrentPreparedApplyPackage is not null
             && !state.CurrentPreparedApplyPackage.HasConflicts
             && string.Equals(state.CurrentPreparedApplyPackage.Fingerprint, state.CurrentPlanPreviewSnapshot.PackageFingerprint, StringComparison.Ordinal);
@@ -384,6 +410,7 @@ public sealed class WorkspaceSessionService : IWorkspaceSessionService
             PlanBuildStatus = PlanBuildStatus.Idle,
             PlanBuildErrorMessage = null,
             LastErrorDetails = null,
+            IsApplyingPlan = false,
             ApplyResultMessage = null,
             StatusText = statusText,
             CanApplyPlan = false

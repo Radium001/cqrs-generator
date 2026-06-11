@@ -16,12 +16,14 @@ public sealed class MainWindowViewModel
         IThemeService themeService,
         IWorkspaceStore workspaceStore,
         IWorkspaceSessionService workspaceSessionService,
-        GeneratorHostViewModel generatorHostViewModel)
+        GeneratorHostViewModel generatorHostViewModel,
+        AppUpdateViewModel updates)
     {
         _workspaceStore = workspaceStore;
         _workspaceSessionService = workspaceSessionService;
 
-        MainMenu = new MainMenuViewModel(themeService);
+        Updates = updates;
+        MainMenu = new MainMenuViewModel(themeService, Updates);
         GeneratorHost = generatorHostViewModel;
         GenerationPlanPreview = new GenerationPlanPreviewViewModel(_workspaceStore);
         MessagesPanel = new MessagesPanelViewModel(_workspaceStore);
@@ -46,6 +48,8 @@ public sealed class MainWindowViewModel
 
     public MainMenuViewModel MainMenu { get; }
 
+    public AppUpdateViewModel Updates { get; }
+
     public GeneratorHostViewModel GeneratorHost { get; }
 
     public GenerationPlanPreviewViewModel GenerationPlanPreview { get; }
@@ -60,9 +64,9 @@ public sealed class MainWindowViewModel
 
     public IAsyncRelayCommand ApplyPlanCommand { get; }
 
-    private bool CanOpenProject() => !_workspaceStore.State.IsScanning;
+    private bool CanOpenProject() => !_workspaceStore.State.IsScanning && !_workspaceStore.State.IsApplyingPlan;
 
-    private bool CanRescanProject() => !_workspaceStore.State.IsScanning && _workspaceStore.State.ProjectContext is not null;
+    private bool CanRescanProject() => !_workspaceStore.State.IsScanning && !_workspaceStore.State.IsApplyingPlan && _workspaceStore.State.ProjectContext is not null;
 
     private async Task OpenProjectAsync()
     {
@@ -144,11 +148,14 @@ public sealed class MainWindowViewModel
         RescanProjectCommand.NotifyCanExecuteChanged();
     }
 
+    public Task InitializeAsync(CancellationToken cancellationToken = default) => Updates.InitializeAsync(cancellationToken);
+
     private void SyncWorkspaceChrome(WorkspaceState state)
     {
         MainMenu.TargetRootPath = state.TargetRootPath ?? "Target project is not selected";
         MainMenu.IsProjectLoaded = state.IsProjectLoaded;
         MainMenu.IsScanning = state.IsScanning;
+        MainMenu.IsApplyingPlan = state.IsApplyingPlan;
         MainMenu.StatusText = state.StatusText;
 
         RefreshPlanActions();

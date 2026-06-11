@@ -22,6 +22,7 @@ public sealed record WorkspaceState(
     bool CanApplyPlan,
     bool IsProjectLoaded,
     bool IsScanning,
+    bool IsApplyingPlan,
     string? ApplyResultMessage,
     IReadOnlyList<ArchitectureWarning> Warnings)
 {
@@ -37,6 +38,7 @@ public sealed record WorkspaceState(
         null,
         null,
         "Open a project.",
+        false,
         false,
         false,
         false,

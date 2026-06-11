@@ -6,10 +6,20 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <Version>0.1.0</Version>
+    <InformationalVersion>$(Version)</InformationalVersion>
+    <CqrsGeneratorUpdateUrl Condition="'$(CqrsGeneratorUpdateUrl)' == ''"></CqrsGeneratorUpdateUrl>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\CqrsGenerator.Core\CqrsGenerator.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>CqrsGeneratorUpdateUrl</_Parameter1>
+      <_Parameter2>$(CqrsGeneratorUpdateUrl)</_Parameter2>
+    </AssemblyAttribute>
   </ItemGroup>
 
   <ItemGroup>
@@ -22,6 +32,7 @@
     <PackageReference Include="DiffPlex" Version="1.9.0" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.10" />
     <PackageReference Include="Tmds.DBus.Protocol" Version="0.21.3" />
+    <PackageReference Include="Velopack" Version="1.2.0" />
   </ItemGroup>
 
 </Project>
