@@ -57,14 +57,15 @@ public sealed class QueryGeneratorDefinition : GeneratorDefinition<QueryGenerato
         if (string.IsNullOrWhiteSpace(state.QueryName))
             return GeneratorValidationResult.Error("Query name is required.");
 
-        if (state.ResultDtoRef?.IsFromSession == true &&
-            state.ResultDtoRef.NodeId.HasValue &&
-            session.FindNode(state.ResultDtoRef.NodeId.Value) is null)
+        var resultDtoRef = session.References.GetRef(node.Id, "ResultDto");
+        if (resultDtoRef?.IsFromSession == true &&
+            resultDtoRef.NodeId.HasValue &&
+            session.FindNode(resultDtoRef.NodeId.Value) is null)
             return GeneratorValidationResult.Error("Referenced DTO node no longer exists.");
 
         if (state.CreateQueryServiceMethod)
         {
-            var queryServiceSuggestion = ResolveQueryServiceSuggestion(state, session, session.Artifacts.ProjectModel, FallbackQueryServiceSuggestionService);
+            var queryServiceSuggestion = ResolveQueryServiceSuggestion(state, session, session.Artifacts.ProjectModel, FallbackQueryServiceSuggestionService, node);
             if (queryServiceSuggestion is null)
             {
                 return GeneratorValidationResult.Error(QueryServiceUnavailableMessage);
@@ -96,19 +97,23 @@ public sealed class QueryGeneratorDefinition : GeneratorDefinition<QueryGenerato
         var planService = core.ServiceProvider.GetRequiredService<IAddQueryPlanService>();
         var queryServiceSuggestionService = core.ServiceProvider.GetRequiredService<IQueryServiceSuggestionService>();
 
-        var dtoName = GetDtoName(state, session);
+        var featureRef = session.References.GetRef(node.Id, "Feature");
+        var resultDtoRef = session.References.GetRef(node.Id, "ResultDto");
+        var dtoName = GetDtoName(state, session, node);
+        var dtoProperties = GetDtoProperties(state, session, node);
         var queryServiceSuggestion = ResolveQueryServiceSuggestion(
             state,
             session,
             core.WorkspaceContext.ProjectModel,
-            queryServiceSuggestionService);
+            queryServiceSuggestionService,
+            node);
         var formState = new AddQueryFormState(
-            featureName: GetFeatureMetadata(state, session).FeatureName,
-            state.FeatureRef?.FeaturePath,
+            featureName: GetFeatureMetadata(state, session, node).FeatureName,
+            featureRef?.FeaturePath,
             state.QueryName,
             dtoName,
-            state.ResultDtoRef?.IsFromSession == true,
-            null,
+            resultDtoRef?.IsFromSession == true,
+            dtoProperties,
             state.ResponseShape,
             state.Parameters.ToArray(),
             queryServiceSuggestion,
@@ -125,44 +130,60 @@ public sealed class QueryGeneratorDefinition : GeneratorDefinition<QueryGenerato
         QueryGeneratorState state,
         GenerationSession session,
         CqrsGenerator.Core.Discovery.ProjectModel? projectModel,
-        IQueryServiceSuggestionService queryServiceSuggestionService)
+        IQueryServiceSuggestionService queryServiceSuggestionService,
+        GeneratorNode node)
     {
-        if (!state.CreateQueryServiceMethod || state.FeatureRef is null)
+        var featureRef = session.References.GetRef(node.Id, "Feature");
+        if (!state.CreateQueryServiceMethod || featureRef is null)
         {
             return null;
         }
 
-        var (featureName, featurePath) = GetFeatureMetadata(state, session);
+        var (featureName, featurePath) = GetFeatureMetadata(state, session, node);
         return queryServiceSuggestionService.Suggest(projectModel, featureName, featurePath);
     }
 
-    private static (string? FeatureName, string? FeaturePath) GetFeatureMetadata(QueryGeneratorState state, GenerationSession session)
+    private static (string? FeatureName, string? FeaturePath) GetFeatureMetadata(QueryGeneratorState state, GenerationSession session, GeneratorNode node)
     {
-        if (state.FeatureRef is null)
+        var featureRef = session.References.GetRef(node.Id, "Feature");
+        if (featureRef is null)
         {
             return (null, null);
         }
 
-        var feature = session.Artifacts.Find(state.FeatureRef);
+        var feature = session.Artifacts.Find(featureRef);
         if (feature is not null)
         {
             return (feature.Name, feature.FeaturePath);
         }
 
-        return (state.FeatureRef.DisplayName ?? state.FeatureRef.Name, state.FeatureRef.FeaturePath);
+        return (featureRef.DisplayName ?? featureRef.Name, featureRef.FeaturePath);
     }
 
-    private static string? GetDtoName(QueryGeneratorState state, GenerationSession session)
+    private static IReadOnlyList<PropertySpec>? GetDtoProperties(QueryGeneratorState state, GenerationSession session, GeneratorNode node)
     {
-        if (state.ResultDtoRef is null)
-            return state.ExistingResultDtoName;
-
-        if (state.ResultDtoRef.IsFromProject || !state.ResultDtoRef.NodeId.HasValue)
+        var resultDtoRef = session.References.GetRef(node.Id, "ResultDto");
+        if (resultDtoRef?.NodeId is Guid nodeId)
         {
-            return state.ResultDtoRef.Name;
+            var dtoNode = session.FindNode(nodeId);
+            if (dtoNode?.State is DtoGeneratorState dtoState && dtoState.Properties.Count > 0)
+                return dtoState.Properties.ToArray();
+        }
+        return null;
+    }
+
+    private static string? GetDtoName(QueryGeneratorState state, GenerationSession session, GeneratorNode node)
+    {
+        var resultDtoRef = session.References.GetRef(node.Id, "ResultDto");
+        if (resultDtoRef is null)
+            return state.CustomDtoName;
+
+        if (resultDtoRef.IsFromProject || !resultDtoRef.NodeId.HasValue)
+        {
+            return resultDtoRef.Name;
         }
 
-        var dtoNode = session.FindNode(state.ResultDtoRef.NodeId.Value);
+        var dtoNode = session.FindNode(resultDtoRef.NodeId.Value);
         if (dtoNode?.State is DtoGeneratorState dtoState)
         {
             var suffix = dtoState.SuffixIndex >= 0 && dtoState.SuffixIndex < 2

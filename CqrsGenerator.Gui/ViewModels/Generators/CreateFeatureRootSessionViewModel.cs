@@ -129,18 +129,6 @@ public sealed partial class CreateFeatureRootSessionViewModel : ObservableObject
         return ScenarioOutlineProjector.Project(Node);
     }
 
-    public GenerationPlan BuildPlan(ProjectWorkspaceContext workspaceContext)
-    {
-        ArgumentNullException.ThrowIfNull(workspaceContext);
-
-        var formState = new CreateFeatureFormState(
-            FeaturePath?.Trim(),
-            GetSelectedSubfolder(),
-            CreateWebFeature);
-
-        return _planService.BuildPlan(workspaceContext, formState);
-    }
-
     private string? GetSelectedSubfolder()
     {
         var item = SubfolderPicker.SelectedItem;

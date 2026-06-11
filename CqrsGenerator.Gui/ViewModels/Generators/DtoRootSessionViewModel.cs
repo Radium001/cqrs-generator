@@ -194,12 +194,6 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
         ReloadProject(workspaceContext?.ProjectModel);
     }
 
-    public GenerationPlan BuildPlan(ProjectWorkspaceContext workspaceContext)
-    {
-        ArgumentNullException.ThrowIfNull(workspaceContext);
-        return _planService.BuildPlan(workspaceContext, CreateFormState());
-    }
-
     partial void OnSelectedFeatureChanged(FeatureItemViewModel? value)
     {
         SyncToSessionState();
@@ -224,6 +218,7 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
     private void ReloadProject(ProjectModel? project)
     {
         _projectModel = project;
+
         if (_generationSession is not null)
         {
             _generationSession.Artifacts.SetProjectModel(project);
@@ -236,7 +231,7 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
             return;
         }
 
-        var selectedFeatureRef = _sessionState?.FeatureRef;
+        var selectedFeatureRef = _generationSession.References.GetRef(Node?.Id ?? default, "Feature") ?? _sessionState?.FeatureRef;
         var features = _generationSession.Artifacts.GetFeatures()
             .Select(feature => new FeatureItemViewModel(feature.Ref))
             .OrderBy(feature => feature.Name, StringComparer.OrdinalIgnoreCase)
@@ -262,9 +257,13 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
 
         selected ??= FeatureItems.FirstOrDefault();
 
+        var shouldLock = selected is not null && (
+            _fixedFeature is not null ||
+            (!_isStandalone && (_generationSession?.References.GetRef(Node?.Id ?? default, "Feature") is not null || _sessionState?.FeatureRef is not null)));
+
         _isSyncingFeature = true;
         SelectedFeature = selected;
-        if (_fixedFeature is not null && selected is not null)
+        if (shouldLock)
         {
             FeaturePicker.LockSelection(selected);
         }
@@ -349,7 +348,6 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
     private void SyncToSessionState()
     {
         if (_sessionState is null) return;
-        _sessionState.FeatureRef = SelectedFeature?.Ref;
         _sessionState.BaseName = DtoNameCyclic.Text.Trim();
         _sessionState.SuffixIndex = DtoNameCyclic.SelectedIndex;
         _sessionState.Properties.Clear();
@@ -357,27 +355,6 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
         {
             _sessionState.Properties.Add(new PropertySpec(p.Type.Trim(), p.Name.Trim()));
         }
-    }
-
-    private AddDtoFormState CreateFormState()
-    {
-        var subfolder = SubfolderPicker.SelectedItem?.IsCustom == true
-            ? SubfolderPicker.SearchText
-            : SubfolderPicker.SelectedRawItem as string;
-
-        if (string.Equals(subfolder, "(root folder)", StringComparison.Ordinal))
-            subfolder = null;
-
-        return new AddDtoFormState(
-            SelectedFeature?.Name,
-            SelectedFeature?.RelativePath,
-            DtoNameCyclic.FullText,
-            Parameters
-                .Where(p => p.IsComplete)
-                .Select(p => new PropertySpec(p.Type.Trim(), p.Name.Trim()))
-                .ToArray(),
-            UpdateWebImports,
-            subfolder);
     }
 
     private static bool ArtifactRefEquals(ArtifactRef left, ArtifactRef right)

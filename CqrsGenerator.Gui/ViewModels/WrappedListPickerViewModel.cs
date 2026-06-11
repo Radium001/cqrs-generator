@@ -353,6 +353,11 @@ public partial class WrappedListPickerViewModel : ObservableObject
         IsSelectionLocked = false;
     }
 
+    public void RefreshFilteredItems()
+    {
+        OnPropertyChanged(nameof(FilteredItems));
+    }
+
     public void SelectNext()
     {
         var filtered = FilteredItems.Cast<WrappedListItem>().ToList();

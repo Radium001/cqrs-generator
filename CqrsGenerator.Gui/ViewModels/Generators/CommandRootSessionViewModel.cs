@@ -224,12 +224,6 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject,
         return ScenarioOutlineProjector.Project(Node);
     }
 
-    public GenerationPlan BuildPlan(ProjectWorkspaceContext workspaceContext)
-    {
-        ArgumentNullException.ThrowIfNull(workspaceContext);
-        return _planService.BuildPlan(workspaceContext, CreateFormState());
-    }
-
     partial void OnSelectedFeatureChanged(FeatureItemViewModel? value)
     {
         if (_isSyncingFeature)
@@ -393,22 +387,6 @@ public sealed partial class CommandRootSessionViewModel : ObservableObject,
         }
         _sessionState.FeatureRef = SelectedFeature?.Ref;
         SyncSelectedRepositoriesToState();
-    }
-
-    private AddCommandFormState CreateFormState()
-    {
-        return new AddCommandFormState(
-            SelectedFeature?.Name,
-            SelectedFeature?.RelativePath,
-            CommandName,
-            HasResponseType ? GetDtoTypeName() : null,
-            Parameters
-                .Where(parameter => !string.IsNullOrWhiteSpace(parameter.Type) && !string.IsNullOrWhiteSpace(parameter.Name))
-                .Select(parameter => new PropertySpec(parameter.Type.Trim(), parameter.Name.Trim()))
-                .ToArray(),
-            DependencyPicker.GetSelected(),
-            Array.Empty<object>(),
-            UpdateWebImports);
     }
 
     private string? GetDtoTypeName()

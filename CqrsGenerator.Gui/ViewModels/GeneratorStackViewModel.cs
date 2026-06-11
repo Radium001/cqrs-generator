@@ -383,6 +383,8 @@ public sealed partial class GeneratorStackViewModel : ObservableObject
         {
             _lastProjectContext = state.ProjectContext;
 
+            _generationSession.Artifacts.SetProjectModel(state.ProjectContext?.ProjectModel);
+
             if (_rootSession is IWorkspaceAwareGeneratorSessionViewModel rootAware)
             {
                 rootAware.UpdateWorkspace(state.ProjectContext);

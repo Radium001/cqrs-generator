@@ -22,7 +22,7 @@ public class TempProject : IDisposable
 
     public string AddFile(string relativePath, string content)
     {
-        var path = Path.Combine(Root, relativePath);
+        var path = Path.GetFullPath(Path.Combine(Root, relativePath));
         var dir = Path.GetDirectoryName(path)!;
         Directory.CreateDirectory(dir);
         File.WriteAllText(path, content);

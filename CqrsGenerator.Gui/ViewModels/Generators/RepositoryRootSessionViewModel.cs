@@ -169,12 +169,6 @@ public sealed partial class RepositoryRootSessionViewModel : ObservableObject,
         return ScenarioOutlineProjector.Project(Node);
     }
 
-    public GenerationPlan BuildPlan(ProjectWorkspaceContext workspaceContext)
-    {
-        ArgumentNullException.ThrowIfNull(workspaceContext);
-        return _planService.BuildPlan(workspaceContext, CreateFormState());
-    }
-
     private bool HasEntitySelection => ResolveEntity() is not null;
 
     private bool AreCustomMethodsComplete => CustomMethods.All(method => method.IsComplete);
@@ -248,24 +242,6 @@ public sealed partial class RepositoryRootSessionViewModel : ObservableObject,
         OnPropertyChanged(nameof(CanBuildPlan));
         OnPropertyChanged(nameof(CanComplete));
         OnPropertyChanged(nameof(HasUnsavedChanges));
-    }
-
-    private AddRepositoryFormState CreateFormState()
-    {
-        return new AddRepositoryFormState(
-            SelectedEntity?.DisplayName,
-            SelectedEntity?.Name,
-            SelectedEntity?.Namespace,
-            null,
-            MethodPresets.Where(preset => preset.IsSelected).Select(preset => preset.Key).ToArray(),
-            CustomMethods.Select(method => new RepositoryMethodSpec(
-                method.Name,
-                method.ReturnType,
-                method.Parameters
-                    .Where(parameter => parameter.IsComplete)
-                    .Select(parameter => new PropertySpec(parameter.Type, parameter.Name))
-                    .ToArray())).ToArray(),
-            AddDependencyInjectionRegistration);
     }
 
     private IReadOnlyList<RepositoryMethodSpec> BuildMethods(string entityName)

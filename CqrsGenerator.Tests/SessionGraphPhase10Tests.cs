@@ -230,11 +230,12 @@ public sealed class SessionGraphPhase10Tests
         var node = navigator.CreateRoot(GeneratorNodeKind.Query, new QueryGeneratorState
         {
             QueryName = "GetUsers",
-            FeatureRef = new ArtifactRef(GeneratorNodeKind.Feature, ArtifactOrigin.Project, "Users", FeaturePath: "Users"),
-            ExistingResultDtoName = "UserDto",
+            FeaturePath = "Users",
+            CustomDtoName = "UserDto",
             CreateQueryServiceMethod = true,
             MethodName = "GetUsersAsync",
         });
+        session.References.SetRef(node.Id, "Feature", new ArtifactRef(GeneratorNodeKind.Feature, ArtifactOrigin.Project, "Users", FeaturePath: "Users"));
 
         var definition = new QueryGeneratorDefinition();
         var serviceProvider = new QueryDefinitionServiceProvider(new CapturingAddQueryPlanService(), new QueryServiceSuggestionService());
@@ -272,11 +273,12 @@ public sealed class SessionGraphPhase10Tests
         var node = navigator.CreateRoot(GeneratorNodeKind.Query, new QueryGeneratorState
         {
             QueryName = "GetUsers",
-            FeatureRef = new ArtifactRef(GeneratorNodeKind.Feature, ArtifactOrigin.Project, "Users", FeaturePath: "Users"),
-            ExistingResultDtoName = "UserDto",
+            FeaturePath = "Users",
+            CustomDtoName = "UserDto",
             CreateQueryServiceMethod = true,
             MethodName = "GetUsersAsync",
         });
+        session.References.SetRef(node.Id, "Feature", new ArtifactRef(GeneratorNodeKind.Feature, ArtifactOrigin.Project, "Users", FeaturePath: "Users"));
 
         var validation = new QueryGeneratorDefinition().Validate(node, (QueryGeneratorState)node.State, session);
 
@@ -346,14 +348,14 @@ public sealed class SessionGraphPhase10Tests
         var queryState = new QueryGeneratorState
         {
             QueryName = "GetUsers",
-            ResultDtoRef = new ArtifactRef(GeneratorNodeKind.Dto, ArtifactOrigin.Session, "UserDto", dtoNode.Id),
         };
-        navigator.CreateRoot(GeneratorNodeKind.Query, queryState);
+        var queryNode = navigator.CreateRoot(GeneratorNodeKind.Query, queryState);
+        session.References.SetRef(queryNode.Id, "ResultDto", new ArtifactRef(GeneratorNodeKind.Dto, ArtifactOrigin.Session, "UserDto", dtoNode.Id));
 
         var usages = navigator.FindUsages(dtoNode.Id);
 
         Assert.Single(usages);
-        Assert.Equal(nameof(QueryGeneratorState.ResultDtoRef), usages[0].PropertyName);
+        Assert.Equal("ResultDto", usages[0].PropertyName);
     }
 
     [Fact]
@@ -408,9 +410,9 @@ public sealed class SessionGraphPhase10Tests
         var queryState = new QueryGeneratorState
         {
             QueryName = "GetUsers",
-            ResultDtoRef = new ArtifactRef(GeneratorNodeKind.Dto, ArtifactOrigin.Session, "UserDto", dtoNode.Id),
         };
-        navigator.CreateRoot(GeneratorNodeKind.Query, queryState);
+        var queryNode = navigator.CreateRoot(GeneratorNodeKind.Query, queryState);
+        session.References.SetRef(queryNode.Id, "ResultDto", new ArtifactRef(GeneratorNodeKind.Dto, ArtifactOrigin.Session, "UserDto", dtoNode.Id));
 
         var removed = navigator.RemoveNode(dtoNode.Id);
 
@@ -425,9 +427,9 @@ public sealed class SessionGraphPhase10Tests
         var queryState = new QueryGeneratorState
         {
             QueryName = "GetUsers",
-            ResultDtoRef = new ArtifactRef(GeneratorNodeKind.Dto, ArtifactOrigin.Session, "MissingDto", Guid.NewGuid()),
         };
         var node = navigator.CreateRoot(GeneratorNodeKind.Query, queryState);
+        session.References.SetRef(node.Id, "ResultDto", new ArtifactRef(GeneratorNodeKind.Dto, ArtifactOrigin.Session, "MissingDto", Guid.NewGuid()));
         var definition = catalog.GetDefinition(GeneratorNodeKind.Query);
 
         var result = definition.Validate(node, session);
@@ -489,6 +491,25 @@ public sealed class SessionGraphPhase10Tests
     }
 
     [Fact]
+    public void PlanBuilder_OnlyBuildsForRootNodes_NotCommittedChildren()
+    {
+        var catalog = new GeneratorDefinitionCatalog(CreateTestDefinitions());
+        var builder = new GenerationSessionPlanBuilder(catalog, new StubServiceProvider());
+        var (session, navigator) = CreateSessionAndNavigator();
+
+        var root = navigator.CreateRoot(GeneratorNodeKind.Query, new QueryGeneratorState { QueryName = "GetUsers" });
+        root.Status = GeneratorNodeStatus.Valid;
+        var child = navigator.CreateChild(root, GeneratorNodeKind.Dto, new DtoGeneratorState { BaseName = "UserDto" });
+        child.Status = GeneratorNodeStatus.Valid;
+        child.Lifecycle = GeneratorNodeLifecycle.Committed;
+
+        var plan = builder.BuildPlan(session, new CoreWorkflowContext(null!, null!, null!, new StubServiceProvider()));
+
+        Assert.NotNull(plan);
+        Assert.Empty(plan.Conflicts);
+    }
+
+    [Fact]
     public void ValidationService_UpdatesNodeStatuses_FromDefinitionResults()
     {
         var catalog = new GeneratorDefinitionCatalog(CreateTestDefinitions());
@@ -500,8 +521,8 @@ public sealed class SessionGraphPhase10Tests
             new QueryGeneratorState
             {
                 QueryName = "GetUsers",
-                ResultDtoRef = new ArtifactRef(GeneratorNodeKind.Dto, ArtifactOrigin.Session, "MissingDto", Guid.NewGuid()),
             });
+        session.References.SetRef(invalidNode.Id, "ResultDto", new ArtifactRef(GeneratorNodeKind.Dto, ArtifactOrigin.Session, "MissingDto", Guid.NewGuid()));
 
         var result = validationService.Validate(session);
 
@@ -564,10 +585,11 @@ public sealed class SessionGraphPhase10Tests
                     session.FindNode(repoState.EntityRef.NodeId.Value) is null)
                     errors.Add("Dangling entity reference");
             }
-            else if (state is QueryGeneratorState queryState)
+            else if (state is QueryGeneratorState)
             {
-                if (queryState.ResultDtoRef?.NodeId.HasValue == true &&
-                    session.FindNode(queryState.ResultDtoRef.NodeId.Value) is null)
+                var resultDtoRef = session.References.GetRef(node.Id, "ResultDto");
+                if (resultDtoRef?.NodeId.HasValue == true &&
+                    session.FindNode(resultDtoRef.NodeId.Value) is null)
                     errors.Add("Dangling result DTO reference");
             }
 

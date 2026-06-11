@@ -184,12 +184,6 @@ public sealed partial class AddWebPageRootSessionViewModel : ObservableObject,
         return ScenarioOutlineProjector.Project(Node);
     }
 
-    public GenerationPlan BuildPlan(ProjectWorkspaceContext workspaceContext)
-    {
-        ArgumentNullException.ThrowIfNull(workspaceContext);
-        return _webPagePlanService.BuildPlan(workspaceContext, CreateFormState());
-    }
-
     partial void OnSelectedFeatureChanged(FeatureItemViewModel? value)
     {
         if (_isSyncingFeature)
@@ -350,22 +344,10 @@ public sealed partial class AddWebPageRootSessionViewModel : ObservableObject,
         return SelectedFeature.RelativePath;
     }
 
-    private AddWebPageFormState CreateFormState()
-    {
-        return new AddWebPageFormState(
-            SelectedFeature?.RelativePath,
-            SelectedFeature?.Name,
-            PageNameCyclic.FullText,
-            string.IsNullOrWhiteSpace(Route) ? "/" + SelectedFeature?.Name?.ToLowerInvariant() : Route,
-            CreateImports,
-            QueryPicker.GetSelected(),
-            Array.Empty<AddQueryFormState>());
-    }
-
     private void OpenCreateQuery()
     {
         if (Node is null || _navigator is null || _generationSession is null) return;
-        var state = new QueryGeneratorState { QueryName = "Get", FeatureRef = SelectedFeature?.Ref };
+        var state = new QueryGeneratorState { QueryName = "Get", FeaturePath = SelectedFeature?.Ref?.FeaturePath ?? string.Empty };
         var child = _navigator.CreateChild(Node, GeneratorNodeKind.Query, state, "Query");
         _navigator.OpenNode(child.Id);
     }

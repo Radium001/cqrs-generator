@@ -30,10 +30,10 @@ public sealed class GenerationSessionPlanBuilder
     {
         var result = new GenerationPlan();
 
-        var orderedNodes = session.Traverse()
+        var orderedNodes = session.Roots
             .Where(node => node.Status is GeneratorNodeStatus.Valid or GeneratorNodeStatus.Ready)
             .OrderBy(node => GetBuildPriority(node.Kind))
-            .ThenBy(node => GetTraversalIndex(session, node))
+            .ThenBy(node => session.Roots.IndexOf(node))
             .ToList();
 
         foreach (var node in orderedNodes)
@@ -66,17 +66,5 @@ public sealed class GenerationSessionPlanBuilder
     private static int GetBuildPriority(GeneratorNodeKind kind)
     {
         return BuildOrder.GetValueOrDefault(kind, int.MaxValue);
-    }
-
-    private static int GetTraversalIndex(GenerationSession session, GeneratorNode node)
-    {
-        var index = 0;
-        foreach (var candidate in session.Traverse())
-        {
-            if (candidate.Id == node.Id)
-                return index;
-            index++;
-        }
-        return int.MaxValue;
     }
 }

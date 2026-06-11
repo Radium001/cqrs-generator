@@ -11,6 +11,8 @@ public sealed partial class GenerationSession : ObservableObject
 
     public SessionArtifactIndex Artifacts { get; }
 
+    public ReferenceRegistry References { get; } = new();
+
     [ObservableProperty]
     private GeneratorNode? _activeNode;
 

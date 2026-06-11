@@ -1,4 +1,4 @@
-using CqrsGenerator.Gui.Session.States;
+using System.Linq;
 
 namespace CqrsGenerator.Gui.Session;
 
@@ -65,7 +65,7 @@ public sealed class GenerationSessionNavigator : IGenerationSessionNavigator
             return false;
         }
 
-        var usages = FindUsages(nodeId);
+        var usages = _session.References.FindTargeting(nodeId);
         if (usages.Count > 0)
         {
             return false;
@@ -73,96 +73,26 @@ public sealed class GenerationSessionNavigator : IGenerationSessionNavigator
 
         if (node.ParentId is null)
         {
-            return _session.Roots.Remove(node);
+            if (!_session.Roots.Remove(node))
+                return false;
         }
-
-        var parent = _session.FindNode(node.ParentId.Value);
-        if (parent is null)
+        else
         {
-            return false;
+            var parent = _session.FindNode(node.ParentId.Value);
+            if (parent is null || !parent.Children.Remove(node))
+                return false;
         }
 
-        return parent.Children.Remove(node);
+        _session.References.ClearAllForSource(nodeId);
+        return true;
     }
 
     public IReadOnlyList<NodeUsage> FindUsages(Guid nodeId)
     {
-        var result = new List<NodeUsage>();
-
-        foreach (var candidate in _session.Traverse())
-        {
-            if (candidate.Id == nodeId)
-            {
-                continue;
-            }
-
-            foreach (var usage in EnumerateReferences(candidate.State))
-            {
-                if (usage.Reference.NodeId == nodeId)
-                {
-                    result.Add(new NodeUsage(candidate, usage.PropertyName));
-                }
-            }
-        }
-
-        return result;
-    }
-
-    private static IEnumerable<(ArtifactRef Reference, string PropertyName)> EnumerateReferences(object state)
-    {
-        switch (state)
-        {
-            case QueryGeneratorState queryState:
-                if (queryState.FeatureRef is not null)
-                {
-                    yield return (queryState.FeatureRef, nameof(QueryGeneratorState.FeatureRef));
-                }
-
-                if (queryState.ResultDtoRef is not null)
-                {
-                    yield return (queryState.ResultDtoRef, nameof(QueryGeneratorState.ResultDtoRef));
-                }
-
-                yield break;
-
-            case CommandGeneratorState commandState:
-                if (commandState.FeatureRef is not null)
-                {
-                    yield return (commandState.FeatureRef, nameof(CommandGeneratorState.FeatureRef));
-                }
-
-                foreach (var repositoryRef in commandState.RepositoryRefs)
-                {
-                    yield return (repositoryRef, nameof(CommandGeneratorState.RepositoryRefs));
-                }
-
-                yield break;
-
-            case RepositoryGeneratorState repositoryState:
-                if (repositoryState.FeatureRef is not null)
-                {
-                    yield return (repositoryState.FeatureRef, nameof(RepositoryGeneratorState.FeatureRef));
-                }
-
-                if (repositoryState.EntityRef is not null)
-                {
-                    yield return (repositoryState.EntityRef, nameof(RepositoryGeneratorState.EntityRef));
-                }
-
-                yield break;
-
-            case WebPageGeneratorState webPageState:
-                if (webPageState.FeatureRef is not null)
-                {
-                    yield return (webPageState.FeatureRef, nameof(WebPageGeneratorState.FeatureRef));
-                }
-
-                foreach (var queryRef in webPageState.QueryRefs)
-                {
-                    yield return (queryRef, nameof(WebPageGeneratorState.QueryRefs));
-                }
-
-                yield break;
-        }
+        return _session.References.FindTargeting(nodeId)
+            .Select(entry => new NodeUsage(
+                _session.FindNode(entry.SourceId) ?? throw new InvalidOperationException($"Source node {entry.SourceId} not found"),
+                entry.Relationship))
+            .ToList();
     }
 }

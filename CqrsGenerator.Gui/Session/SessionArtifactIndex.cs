@@ -362,7 +362,7 @@ public sealed class SessionArtifactIndex
                     ArtifactOrigin.Session,
                     GetDtoFullName(dtoState),
                     node.Id,
-                    FeaturePath: ResolveFeaturePath(node, current => (current.State as DtoGeneratorState)?.FeaturePath),
+                    FeaturePath: dtoState.FeatureRef?.FeaturePath,
                     DisplayName: GetDtoFullName(dtoState)),
 
             GeneratorNodeKind.Entity when node.State is EntityGeneratorState entityState =>
@@ -389,7 +389,7 @@ public sealed class SessionArtifactIndex
                     ArtifactOrigin.Session,
                     queryState.QueryName,
                     node.Id,
-                    queryState.FeatureRef?.FeaturePath,
+                    queryState.FeaturePath is { Length: >0 } fp ? fp : null,
                     DisplayName: queryState.QueryName),
 
             _ => null,
@@ -412,7 +412,7 @@ public sealed class SessionArtifactIndex
         var parent = _session.FindNode(node.ParentId.Value);
         if (parent?.State is QueryGeneratorState queryState)
         {
-            return queryState.FeatureRef?.FeaturePath;
+            return queryState.FeaturePath is { Length: >0 } fp ? fp : null;
         }
 
         if (parent?.State is RepositoryGeneratorState repositoryState)

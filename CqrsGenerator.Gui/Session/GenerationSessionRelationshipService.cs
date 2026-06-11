@@ -17,14 +17,12 @@ public sealed class GenerationSessionRelationshipService
             return false;
         }
 
+        session.References.SetRef(parent.Id, child.RelationshipName, reference);
+
         switch (parent.State)
         {
-            case QueryGeneratorState queryState when string.Equals(child.RelationshipName, "Feature", StringComparison.Ordinal):
-                queryState.FeatureRef = reference;
-                return true;
-
-            case QueryGeneratorState queryState when string.Equals(child.RelationshipName, "ResultDto", StringComparison.Ordinal):
-                queryState.ResultDtoRef = reference;
+            case QueryGeneratorState when string.Equals(child.RelationshipName, "Feature", StringComparison.Ordinal):
+            case QueryGeneratorState when string.Equals(child.RelationshipName, "ResultDto", StringComparison.Ordinal):
                 return true;
 
             case RepositoryGeneratorState repositoryState when string.Equals(child.RelationshipName, "Entity", StringComparison.Ordinal):

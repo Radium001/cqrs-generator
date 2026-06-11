@@ -113,8 +113,8 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
 
         AddParameterCommand = new RelayCommand(AddParameter);
         RemoveParameterCommand = new RelayCommand<PropertyEntryViewModel>(RemoveParameter);
-        OpenCreateDtoCommand = new RelayCommand(OpenCreateDto, () => Node is not null);
-        OpenCreateFeatureCommand = new RelayCommand(OpenCreateFeature, () => Node is not null);
+        OpenCreateDtoCommand = new RelayCommand(OpenCreateDto, () => Node is not null && _generationSession?.References.GetRef(Node.Id, "ResultDto") is null);
+        OpenCreateFeatureCommand = new RelayCommand(OpenCreateFeature, () => Node is not null && _generationSession?.References.GetRef(Node.Id, "Feature") is null);
         EditSelectedDtoCommand = new RelayCommand(EditSelectedDto, () => SelectedDtoChoice?.NodeId is not null);
         RemoveSelectedDtoCommand = new RelayCommand(RemoveSelectedDto, () => SelectedDtoChoice?.NodeId is not null);
         EditSelectedFeatureCommand = new RelayCommand(EditSelectedFeature, () => SelectedFeature?.NodeId is not null);
@@ -157,6 +157,11 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
         {
             _sessionState = existingState;
         }
+
+        OpenCreateDtoCommand.NotifyCanExecuteChanged();
+        OpenCreateFeatureCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(ShowCreateDtoButton));
+        OnPropertyChanged(nameof(ShowCreateFeatureButton));
     }
 
     public WrappedListPickerViewModel FeaturePicker { get; }
@@ -222,7 +227,7 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
 
     public QueryDtoSelectionState? SelectedDtoSelection => CreateDtoSelectionState();
 
-    public bool ShowDtoPromotionHint => SelectedDtoRequiresPromotion;
+    public bool ShowDtoPromotionHint => SelectedDtoRequiresPromotion && SelectedDtoChoice?.NodeId is null;
 
     public bool SelectedDtoRequiresPromotion => SelectedDtoChoice?.IsLocal == true;
 
@@ -250,9 +255,9 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
 
     public IRelayCommand RemoveSelectedFeatureCommand { get; }
 
-    public bool ShowCreateDtoButton => Node is not null && _navigator is not null;
+    public bool ShowCreateDtoButton => Node is not null && _navigator is not null && _generationSession?.References.GetRef(Node.Id, "ResultDto") is null;
 
-    public bool ShowCreateFeatureButton => Node is not null && _navigator is not null;
+    public bool ShowCreateFeatureButton => Node is not null && _navigator is not null && _generationSession?.References.GetRef(Node.Id, "Feature") is null;
 
     public bool CanEditSelectedDto => SelectedDtoChoice?.NodeId is not null;
 
@@ -297,12 +302,6 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
         return ScenarioOutlineProjector.Project(Node);
     }
 
-    public GenerationPlan BuildPlan(ProjectWorkspaceContext workspaceContext)
-    {
-        ArgumentNullException.ThrowIfNull(workspaceContext);
-        return _planService.BuildPlan(workspaceContext, CreateFormState());
-    }
-
     partial void OnSelectedFeatureChanged(FeatureItemViewModel? value)
     {
         if (!_isSyncingFeature)
@@ -315,6 +314,19 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
         if (_isReloadingProject)
         {
             return;
+        }
+
+        if (value is not null && Node is not null)
+        {
+            foreach (var child in Node.Children)
+            {
+                if (child.Lifecycle == GeneratorNodeLifecycle.Committed &&
+                    child.State is DtoGeneratorState dtoState &&
+                    !string.Equals(dtoState.FeaturePath, value.RelativePath, StringComparison.OrdinalIgnoreCase))
+                {
+                    dtoState.FeaturePath = value.RelativePath;
+                }
+            }
         }
 
         SyncToSessionState();
@@ -376,11 +388,16 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
         }
 
         RefreshDtoChoices();
+
+        if (_generationSession?.References.GetRef(Node?.Id ?? default, "ResultDto")?.IsFromSession == true)
+        {
+            LockCommittedDto();
+            ResultTypePicker.RefreshFilteredItems();
+        }
     }
 
     private void ReloadProject(ProjectModel? project)
     {
-        var previousResultDtoRef = _sessionState?.ResultDtoRef;
         _isReloadingProject = true;
         try
         {
@@ -389,7 +406,7 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
         _isSyncingMethodName = true;
         MethodNameCyclic.Text = QueryNameCyclic.FullText;
         _isSyncingMethodName = false;
-        var previousFeatureRef = _sessionState?.FeatureRef;
+        var previousFeatureRef = _generationSession?.References.GetRef(Node?.Id ?? default, "Feature");
 
         FeatureItems.Clear();
         FeaturePicker.UnlockSelection();
@@ -449,6 +466,8 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
             _isSyncingFeature = false;
         }
 
+        LockCommittedFeature();
+
         _isSyncingQueryName = true;
         QueryName = QueryNameCyclic.FullText;
         _isSyncingQueryName = false;
@@ -457,10 +476,6 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
             ? "No features discovered."
             : "Configure Add Query.";
 
-        if (previousResultDtoRef is not null && _sessionState is not null)
-        {
-            _sessionState.ResultDtoRef = previousResultDtoRef;
-        }
         }
         finally
         {
@@ -478,13 +493,13 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
             }
         }
 
-        if (previousResultDtoRef is not null && _sessionState is not null)
-        {
-            _sessionState.ResultDtoRef = previousResultDtoRef;
-            SelectDto(previousResultDtoRef);
-        }
-
         RestoreDtoSelection();
+        LockCommittedDto();
+        OnPropertyChanged(nameof(SelectedDtoChoice));
+        OnPropertyChanged(nameof(CanEditSelectedDto));
+        OnPropertyChanged(nameof(CanRemoveSelectedDto));
+        EditSelectedDtoCommand.NotifyCanExecuteChanged();
+        RemoveSelectedDtoCommand.NotifyCanExecuteChanged();
         SyncToSessionState();
         OnPropertyChanged(nameof(CanBuildPlan));
         OnPropertyChanged(nameof(CanComplete));
@@ -493,6 +508,10 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
         OnPropertyChanged(nameof(CanRemoveSelectedFeature));
         EditSelectedFeatureCommand.NotifyCanExecuteChanged();
         RemoveSelectedFeatureCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(ShowCreateDtoButton));
+        OnPropertyChanged(nameof(ShowCreateFeatureButton));
+        OpenCreateDtoCommand.NotifyCanExecuteChanged();
+        OpenCreateFeatureCommand.NotifyCanExecuteChanged();
     }
 
     private void OnQueryNameCyclicChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -603,7 +622,7 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
         var featurePath = SelectedFeature.RelativePath;
         var queryBaseName = GetQueryBaseName();
         var discoveredDtos = BuildDtoChoices(featurePath, queryBaseName);
-        var selectedDtoRef = _sessionState?.ResultDtoRef ?? SelectedDtoChoice?.Ref;
+        var selectedDtoRef = SelectedDtoChoice?.Ref ?? _generationSession?.References.GetRef(Node?.Id ?? default, "ResultDto");
 
         _isSyncingResultTypeSelection = true;
         try
@@ -622,12 +641,6 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
             _isSyncingResultTypeSelection = false;
         }
 
-        if (selectedDtoRef is not null && SelectedDtoChoice?.Ref is null && _sessionState is not null)
-        {
-            _sessionState.ResultDtoRef = selectedDtoRef;
-        }
-
-        SyncToSessionState();
         OnPropertyChanged(nameof(SelectedDtoChoice));
         OnPropertyChanged(nameof(SelectedDtoSelection));
         OnPropertyChanged(nameof(ShowDtoPromotionHint));
@@ -636,27 +649,6 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
         OnPropertyChanged(nameof(SelectedDtoSelectionBlocked));
         EditSelectedDtoCommand.NotifyCanExecuteChanged();
         RemoveSelectedDtoCommand.NotifyCanExecuteChanged();
-    }
-
-    private AddQueryFormState CreateFormState()
-    {
-        return new AddQueryFormState(
-            SelectedFeature?.Name,
-            SelectedFeature?.RelativePath,
-            QueryName,
-            CreateDtoSelectionState(),
-            null,
-            GetShapeFromPrefixIndex(ResultTypePicker.SelectedPrefixIndex),
-            Parameters
-                .Where(parameter => !string.IsNullOrWhiteSpace(parameter.Type) && !string.IsNullOrWhiteSpace(parameter.Name))
-                .Select(parameter => new PropertySpec(parameter.Type.Trim(), parameter.Name.Trim()))
-                .ToArray(),
-            _queryServiceSuggestion,
-            CreateQueryServiceMethod,
-            GetMethodName(),
-            GenerateHandlerBody,
-            GenerateQueryServiceBody,
-            UpdateWebImports);
     }
 
     private QueryDtoSelectionState? CreateDtoSelectionState()
@@ -751,9 +743,7 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
     {
         if (_sessionState is null) return;
         _sessionState.QueryName = QueryNameCyclic.FullText.Trim();
-        _sessionState.FeatureRef = SelectedFeature?.Ref;
-        _sessionState.ResultDtoRef = SelectedDtoChoice?.Ref;
-        _sessionState.ExistingResultDtoName = ResultTypePicker.SelectedBaseName;
+        _sessionState.CustomDtoName = ResultTypePicker.SelectedBaseName;
         _sessionState.CreateQueryServiceMethod = CreateQueryServiceMethod;
         _sessionState.MethodName = GetMethodName();
         _sessionState.GenerateHandlerBody = GenerateHandlerBody;
@@ -767,13 +757,45 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
         }
     }
 
+    private void LockCommittedFeature()
+    {
+        var featureRef = _generationSession?.References.GetRef(Node?.Id ?? default, "Feature");
+        if (featureRef?.NodeId is Guid nodeId)
+        {
+            var match = FeatureItems.FirstOrDefault(f => f.NodeId == nodeId);
+            if (match is not null)
+            {
+                _isSyncingFeature = true;
+                SelectedFeature = match;
+                FeaturePicker.LockSelection(match);
+                _isSyncingFeature = false;
+            }
+        }
+    }
+
+    private void LockCommittedDto()
+    {
+        var committedDto = Node?.Children.FirstOrDefault(c =>
+            c.Lifecycle == GeneratorNodeLifecycle.Committed &&
+            string.Equals(c.RelationshipName, "ResultDto", StringComparison.Ordinal));
+        if (committedDto is not null)
+        {
+            var match = ResultTypeItems.FirstOrDefault(dto => dto.NodeId == committedDto.Id);
+            if (match is not null)
+            {
+                ResultTypePicker.LockSelection(match);
+            }
+        }
+    }
+
     private void OpenCreateDto()
     {
         if (Node is null || _navigator is null || _generationSession is null) return;
+        var featureRef = _generationSession.References.GetRef(Node.Id, "Feature") ?? SelectedFeature?.Ref;
         var state = new DtoGeneratorState
         {
             BaseName = "NewDto",
-            FeatureRef = _sessionState?.FeatureRef ?? SelectedFeature?.Ref,
+            FeatureRef = featureRef,
         };
         var child = _navigator.CreateChild(Node, GeneratorNodeKind.Dto, state, "ResultDto");
         _navigator.OpenNode(child.Id);
@@ -802,16 +824,22 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
             return;
         }
 
+        if (_generationSession is not null && Node is not null)
+        {
+            _generationSession.References.ClearRef(Node.Id, "ResultDto");
+        }
+
         if (_navigator.RemoveNode(nodeId))
         {
-            if (_sessionState is not null)
-            {
-                _sessionState.ResultDtoRef = null;
-                _sessionState.ExistingResultDtoName = null;
-            }
+            ResultTypePicker.UnlockSelection();
+            if (_generationSession?.References.GetRef(Node?.Id ?? default, "Feature") is null)
+                FeaturePicker.UnlockSelection();
             RefreshDtoChoices();
             ResultTypePicker.SelectRawItem(null);
-            SyncToSessionState();
+            OnPropertyChanged(nameof(ShowCreateDtoButton));
+            OnPropertyChanged(nameof(ShowCreateFeatureButton));
+            OpenCreateDtoCommand.NotifyCanExecuteChanged();
+            OpenCreateFeatureCommand.NotifyCanExecuteChanged();
         }
     }
 
@@ -830,14 +858,18 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
             return;
         }
 
+        if (_generationSession is not null && Node is not null)
+        {
+            _generationSession.References.ClearRef(Node.Id, "Feature");
+        }
+
         if (_navigator.RemoveNode(nodeId))
         {
-            if (_sessionState is not null)
-            {
-                _sessionState.FeatureRef = null;
-            }
             ReloadProject(_projectModel);
-            SyncToSessionState();
+            OpenCreateDtoCommand.NotifyCanExecuteChanged();
+            OpenCreateFeatureCommand.NotifyCanExecuteChanged();
+            OnPropertyChanged(nameof(ShowCreateDtoButton));
+            OnPropertyChanged(nameof(ShowCreateFeatureButton));
         }
     }
 
@@ -904,7 +936,8 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
 
     private void RestoreDtoSelection()
     {
-        if (_sessionState?.ResultDtoRef is { } dtoRef)
+        var dtoRef = _generationSession?.References.GetRef(Node?.Id ?? default, "ResultDto");
+        if (dtoRef is not null)
         {
             SelectDto(dtoRef);
         }

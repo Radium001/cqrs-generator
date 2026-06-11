@@ -10,7 +10,6 @@ public sealed class AddQueryScenarioOutlineBuilder : IAddQueryScenarioOutlineBui
         ArgumentNullException.ThrowIfNull(formState);
 
         var resultText = formState.DtoSelection?.DtoName ?? "Choose DTO";
-        var customDtoName = GetCustomDtoName(formState.CustomDto);
 
         return
         [
@@ -47,20 +46,13 @@ public sealed class AddQueryScenarioOutlineBuilder : IAddQueryScenarioOutlineBui
                 ScenarioNodeStatus.Ready,
                 formState.UpdateWebImports ? "Update enabled" : "Do not update"),
             new ScenarioNodeViewModel(
-                "Custom DTO",
-                formState.CustomDto is null
+                "Custom DTO Properties",
+                formState.CustomDtoProperties is null || formState.CustomDtoProperties.Count == 0
                     ? ScenarioNodeStatus.Missing
-                    : string.IsNullOrWhiteSpace(customDtoName) ? ScenarioNodeStatus.Missing : ScenarioNodeStatus.Draft,
-                formState.CustomDto is null
-                    ? "No custom DTO"
-                    : string.IsNullOrWhiteSpace(customDtoName)
-                        ? "Child generator required"
-                        : $"{customDtoName} (0 props)"),
+                    : ScenarioNodeStatus.Ready,
+                formState.CustomDtoProperties is null || formState.CustomDtoProperties.Count == 0
+                    ? "No custom properties"
+                    : $"{formState.CustomDtoProperties.Count} custom property/properties"),
         ];
-    }
-
-    private static string? GetCustomDtoName(object? customDto)
-    {
-        return null;
     }
 }

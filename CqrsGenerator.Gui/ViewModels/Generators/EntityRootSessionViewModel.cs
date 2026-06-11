@@ -264,12 +264,6 @@ public sealed partial class EntityRootSessionViewModel : ObservableObject,
         }
     }
 
-    public GenerationPlan BuildPlan(ProjectWorkspaceContext workspaceContext)
-    {
-        ArgumentNullException.ThrowIfNull(workspaceContext);
-        return _planService.BuildPlan(workspaceContext, CreateFormState());
-    }
-
     partial void OnSelectedSourceModeChanged(EntitySourceMode value)
     {
         OnPropertyChanged(nameof(IsEfEntityMode));
@@ -433,25 +427,6 @@ public sealed partial class EntityRootSessionViewModel : ObservableObject,
         }
 
         EfPropertyPicker.SetDiscovered(SelectedEfEntity.Properties);
-    }
-
-    private AddEntityFormState CreateFormState()
-    {
-        return new AddEntityFormState(
-            SelectedSourceMode,
-            SelectedEfEntity,
-            EfPropertyPicker.SelectedKeys.ToArray(),
-            RenameEfIdentifierProperties,
-            EntityName,
-            GetSubfolder(),
-            ManualProperties
-                .Where(property => property.IsComplete)
-                .Select(property => new PropertySpec(property.Type, property.Name))
-                .ToArray(),
-            GenerateFactoryMethod,
-            GenerateEfMapping,
-            false,
-            []);
     }
 
     private void ApplySuggestedEntityName(string entityName)
