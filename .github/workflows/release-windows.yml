@@ -1,0 +1,91 @@
+name: Release Windows
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release-windows:
+    runs-on: windows-latest
+
+    env:
+      PROJECT_PATH: CqrsGenerator.Gui/CqrsGenerator.Gui.csproj
+      PUBLISH_DIR: publish/win-x64
+      RELEASE_DIR: Releases
+      PACK_ID: CqrsGenerator
+      VPK_VERSION: 1.2.0
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Resolve version
+        id: version
+        shell: pwsh
+        run: |
+          $tag = '${{ github.ref_name }}'
+          $version = $tag.TrimStart('v')
+          if ($version -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$') {
+            throw "Tag '$tag' must look like v1.2.3 or v1.2.3-beta.1"
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Restore workloads and packages
+        run: dotnet restore $env:PROJECT_PATH
+
+      - name: Publish app
+        run: >-
+          dotnet publish $env:PROJECT_PATH
+          --configuration Release
+          --runtime win-x64
+          --self-contained true
+          --output $env:PUBLISH_DIR
+          /p:Version=${{ steps.version.outputs.version }}
+          /p:InformationalVersion=${{ steps.version.outputs.version }}
+          /p:CqrsGeneratorUpdateUrl=https://github.com/${{ github.repository }}
+
+      - name: Restore Velopack tool
+        run: dotnet tool restore
+
+      - name: Download previous Velopack releases
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path $env:RELEASE_DIR | Out-Null
+          dotnet tool run vpk download github `
+            --repoUrl https://github.com/${{ github.repository }} `
+            --outputDir $env:RELEASE_DIR `
+            --token ${{ secrets.GITHUB_TOKEN }}
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "No previous Velopack release was downloaded. This is expected for the first release."
+            $global:LASTEXITCODE = 0
+          }
+
+      - name: Pack Velopack release
+        run: >-
+          dotnet tool run vpk pack
+          --packId $env:PACK_ID
+          --packVersion ${{ steps.version.outputs.version }}
+          --packDir $env:PUBLISH_DIR
+          --mainExe CqrsGenerator.Gui.exe
+          --outputDir $env:RELEASE_DIR
+
+      - name: Upload GitHub release
+        run: >-
+          dotnet tool run vpk upload github
+          --repoUrl https://github.com/${{ github.repository }}
+          --releaseName "CQRS Generator ${{ steps.version.outputs.version }}"
+          --tag v${{ steps.version.outputs.version }}
+          --outputDir $env:RELEASE_DIR
+          --publish
+          --token ${{ secrets.GITHUB_TOKEN }}
