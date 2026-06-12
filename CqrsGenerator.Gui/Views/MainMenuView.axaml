@@ -57,31 +57,32 @@
       <StackPanel Grid.Column="1"
                   Margin="0,6,12,6"
                   HorizontalAlignment="Right"
-                  Spacing="2">
-        <TextBlock HorizontalAlignment="Right"
-                   Text="{Binding TargetRootPath}"
+                  Orientation="Horizontal"
+                  Spacing="6">
+        <TextBlock Text="{Binding Updates.BadgeText}"
+                   IsVisible="{Binding Updates.IsLatest}"
+                   Foreground="{DynamicResource TextCreateBrush}"
+                   FontSize="12"
+                   VerticalAlignment="Center" />
+        <TextBlock Text="{Binding Updates.BadgeText}"
+                   IsVisible="{Binding Updates.IsUpdateAvailable}"
+                   Foreground="{DynamicResource TextUpdateBrush}"
+                   FontSize="12"
+                   VerticalAlignment="Center" />
+        <TextBlock Text="{Binding Updates.BadgeText}"
+                   IsVisible="{Binding Updates.IsDownloadingStatus}"
+                   Foreground="{DynamicResource TextAccentBrush}"
+                   FontSize="12"
+                   VerticalAlignment="Center" />
+        <TextBlock Text="{Binding Updates.BadgeText}"
+                   IsVisible="{Binding Updates.IsStatusMuted}"
+                   Foreground="{DynamicResource TextMutedBrush}"
+                   FontSize="12"
+                   VerticalAlignment="Center" />
+        <TextBlock Text="{Binding TargetRootPath}"
                    TextTrimming="CharacterEllipsis"
-                   Foreground="{DynamicResource TextMutedBrush}" />
-        <StackPanel Orientation="Horizontal"
-                    HorizontalAlignment="Right"
-                    Spacing="6">
-          <TextBlock Text="{Binding Updates.BadgeText}"
-                     IsVisible="{Binding Updates.IsLatest}"
-                     Foreground="{DynamicResource TextCreateBrush}"
-                     FontSize="12" />
-          <TextBlock Text="{Binding Updates.BadgeText}"
-                     IsVisible="{Binding Updates.IsUpdateAvailable}"
-                     Foreground="{DynamicResource TextUpdateBrush}"
-                     FontSize="12" />
-          <TextBlock Text="{Binding Updates.BadgeText}"
-                     IsVisible="{Binding Updates.IsDownloadingStatus}"
-                     Foreground="{DynamicResource TextAccentBrush}"
-                     FontSize="12" />
-          <TextBlock Text="{Binding Updates.BadgeText}"
-                     IsVisible="{Binding Updates.IsStatusMuted}"
-                     Foreground="{DynamicResource TextMutedBrush}"
-                     FontSize="12" />
-        </StackPanel>
+                   Foreground="{DynamicResource TextMutedBrush}"
+                   VerticalAlignment="Center" />
       </StackPanel>
     </Grid>
   </Border>
