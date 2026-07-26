@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using CqrsGenerator.Core.Configuration;
 using CqrsGenerator.Core.Templates;
 using CqrsGenerator.Core.Validation;
@@ -30,6 +29,9 @@ public sealed class EntityGenerator(GeneratorConfig config, ScribanTemplateRende
             {
                 entity_name = request.EntityName,
                 @namespace = entityNamespace,
+                usings_block = CSharpTypeMetadataResolver.CreateUsingsBlock(
+                    request.Properties.Select(property => property.Type),
+                    "System"),
                 has_properties = request.Properties.Count > 0,
                 properties_block = string.Join("\n", request.Properties.Select(p => $"        public {p.Type} {p.Name} {{ get; set; }}")),
                 has_factory = request.GenerateFactoryMethod,
@@ -40,41 +42,13 @@ public sealed class EntityGenerator(GeneratorConfig config, ScribanTemplateRende
                     $"        public void {m}()\n        {{\n            {GeneratorConstants.DefaultStubBody}\n        }}")),
             }));
 
-        if (request.GenerateInterface)
-        {
-            var interfaceName = string.Format(GeneratorConstants.EntityInterfacePattern, request.EntityName);
-            var interfacePath = Path.Combine(config.TargetRootPath, "Domain", "Interfaces", "Entities", $"{interfaceName}.cs");
-
-            plan.AddCreateFile(
-                interfacePath,
-                renderer.Render(TemplateNames.EntityInterface, new
-                {
-                    entity_interface = interfaceName,
-                    entity_name = request.EntityName,
-                    @namespace = GeneratorConstants.DomainInterfacesEntitiesNamespace,
-                    has_properties = request.Properties.Count > 0,
-                    properties_block = string.Join("\n", request.Properties.Select(p => $"        {p.Type} {p.Name} {{ get; }}")),
-                }));
-        }
-
         if (request.GenerateEfMapping)
         {
             var mappingPath = Path.Combine(config.TargetRootPath, "Infrastructure", "Data", "EntitiesMapping", $"{request.EntityName}.cs");
 
             if (File.Exists(mappingPath))
             {
-                var existing = File.ReadAllText(mappingPath);
-                if (!existing.Contains("[Obsolete"))
-                {
-                    var modified = InsertObsoleteAttribute(existing, request.EntityName);
-                    plan.AddUpdateFile(mappingPath, modified);
-                }
-                else
-                {
-                    plan.AddUpdateFile(mappingPath, existing);
-                }
-
-                plan.AddWarning($"EF mapping для '{request.EntityName}' уже существует. Добавлен [Obsolete]; требуется ручная проверка и исправление.");
+                plan.AddWarning($"EF mapping для '{request.EntityName}' уже существует и не будет изменён; требуется ручная проверка.");
             }
             else
             {
@@ -107,13 +81,6 @@ public sealed class EntityGenerator(GeneratorConfig config, ScribanTemplateRende
         return plan;
     }
 
-    private static string InsertObsoleteAttribute(string content, string entityName)
-    {
-        var obsolete = $"[Obsolete(\"TODO: требуется ручная проверка и исправление mapping-кода для {entityName}\", false)]";
-        var pattern = $@"public\s+partial\s+class\s+{entityName}";
-        return Regex.Replace(content, pattern, $"{obsolete}\n    $&");
-    }
-
     private static string CreateEfAssignment(PropertySpec p)
     {
         var efName = ToEfPropertyName(p.Name);
@@ -144,6 +111,7 @@ public sealed class EntityGenerator(GeneratorConfig config, ScribanTemplateRende
             {
                 throw new ArgumentException("Property type is required.", nameof(p.Type));
             }
+            CSharpTypeMetadataResolver.EnsureValid(p.Type, nameof(p.Type));
         }
 
         foreach (var methodName in request.DomainMethods)

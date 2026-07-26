@@ -39,9 +39,6 @@ public sealed class CoreWorkflowFactory
     public AddEntityWorkflow AddEntity(GeneratorConfig config) =>
         CreateContext(config).CreateAddEntityWorkflow();
 
-    public AddWebPageWorkflow AddWebPage(GeneratorConfig config) =>
-        CreateContext(config).CreateAddWebPageWorkflow();
-
     private CoreWorkflowContext CreateContext(GeneratorConfig config) =>
         new(config, _templateProvider, _editor);
 }

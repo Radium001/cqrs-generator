@@ -23,6 +23,7 @@ public sealed class LocalQueryDtoGenerator(GeneratorConfig config, ScribanTempla
                 feature_path = featurePath,
                 dto_type = request.DtoName,
                 @namespace = dtoNamespace,
+                usings_block = CSharpTypeMetadataResolver.CreateUsingsBlock(request.Properties.Select(property => property.Type)),
                 has_properties = request.Properties.Count > 0,
                 properties_block = string.Join("\n", request.Properties.Select(property => $"        public {property.Type} {property.Name} {{ get; set; }}")),
             }));
@@ -43,6 +44,7 @@ public sealed class LocalQueryDtoGenerator(GeneratorConfig config, ScribanTempla
             {
                 throw new ArgumentException("Property type is required.", nameof(property.Type));
             }
+            CSharpTypeMetadataResolver.EnsureValid(property.Type, nameof(property.Type));
         }
     }
 

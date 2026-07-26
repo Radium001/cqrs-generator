@@ -11,9 +11,6 @@ public sealed partial class GenerationSession : ObservableObject
 
     public SessionArtifactIndex Artifacts { get; }
 
-    // Legacy compatibility only. Runtime code uses typed state + Relations.
-    public ReferenceRegistry References { get; } = new();
-
     public GenerationSessionRelationIndex Relations { get; }
 
     [ObservableProperty]

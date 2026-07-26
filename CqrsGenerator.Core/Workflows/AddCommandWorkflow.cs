@@ -5,10 +5,14 @@ namespace CqrsGenerator.Core.Workflows;
 public sealed record AddCommandWorkflowRequest(
     string FeaturePath,
     string CommandName,
-    string? ResponseType,
     IReadOnlyList<PropertySpec> Properties,
     IReadOnlyList<CommandHandlerDependency> Dependencies,
-    bool UpdateWebImports = true);
+    string? WebFeaturePath = null)
+{
+    public bool GenerateHandlerBody { get; init; } = true;
+
+    public CommandHandlerScaffoldContext? HandlerScaffoldContext { get; init; }
+}
 
 public sealed class AddCommandWorkflow
 {
@@ -32,16 +36,17 @@ public sealed class AddCommandWorkflow
         {
             FeaturePath = request.FeaturePath,
             CommandName = request.CommandName,
-            ResponseType = request.ResponseType,
             Properties = request.Properties,
             Dependencies = request.Dependencies,
+            GenerateHandlerBody = request.GenerateHandlerBody,
+            HandlerScaffoldContext = request.HandlerScaffoldContext,
         }));
 
-        if (request.UpdateWebImports)
+        if (!string.IsNullOrWhiteSpace(request.WebFeaturePath))
         {
             var config = _context.Config;
             var commandNamespace = GenerationNaming.ToCommandNamespace(config, request.FeaturePath, request.CommandName);
-            _context.CreateRazorImportsGenerator().AddUsingsToPlan(plan, request.FeaturePath, [commandNamespace]);
+            _context.CreateRazorImportsGenerator().AddUsingsToPlan(plan, request.WebFeaturePath, [commandNamespace]);
         }
     }
 }

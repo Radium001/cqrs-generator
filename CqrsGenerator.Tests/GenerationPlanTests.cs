@@ -168,49 +168,6 @@ public static class DependencyInjection
         Assert.Equal(GenerationOperationKind.CreateDirectory, plan.Operations[0].Kind);
     }
 
-    // ── FileSystemPlanApplier ──
-
-    [Fact]
-    public void FileSystemPlanApplier_Apply_WithConflicts_Throws()
-    {
-        var plan = new GenerationPlan();
-        plan.AddConflict("x", "msg");
-
-        Assert.Throws<InvalidOperationException>(() =>
-            new FileSystemPlanApplier().Apply(plan));
-    }
-
-    [Fact]
-    public void FileSystemPlanApplier_Apply_CreatesFilesAndDirs()
-    {
-        using var tmp = new TempProject();
-        var newDir = Path.Combine(tmp.Root, "newdir");
-        var newFile = Path.Combine(newDir, "test.cs");
-
-        var plan = new GenerationPlan();
-        plan.AddDirectory(newDir);
-        plan.AddCreateFile(newFile, "content");
-
-        new FileSystemPlanApplier().Apply(plan);
-
-        Assert.True(Directory.Exists(newDir));
-        Assert.True(File.Exists(newFile));
-        Assert.Equal("content", File.ReadAllText(newFile));
-    }
-
-    [Fact]
-    public void FileSystemPlanApplier_Apply_UpdatesExistingFile()
-    {
-        using var tmp = new TempProject();
-        var filePath = tmp.AddFile("existing.cs", "old content");
-        var plan = new GenerationPlan();
-        plan.AddUpdateFile(filePath, "new content");
-
-        new FileSystemPlanApplier().Apply(plan);
-
-        Assert.Equal("new content", File.ReadAllText(filePath));
-    }
-
     [Fact]
     public void PlanPreparationService_Prepare_AddsExplicitParentDirectoriesForCreateFile()
     {

@@ -27,10 +27,16 @@ public sealed class CSharpSyntaxEditor
         }
 
         var newline = DetectNewLine(source);
-        var closeBracePosition = GetLineStartPosition(source, interfaceDeclaration.CloseBraceToken.SpanStart);
-        var closeBraceIndent = GetLineIndent(source, closeBracePosition);
+        var closeBraceLineStart = GetLineStartPosition(source, interfaceDeclaration.CloseBraceToken.SpanStart);
+        var closeBraceIsOnOwnLine = string.IsNullOrWhiteSpace(
+            source[closeBraceLineStart..interfaceDeclaration.CloseBraceToken.SpanStart]);
+        var closeBracePosition = closeBraceIsOnOwnLine
+            ? closeBraceLineStart
+            : interfaceDeclaration.CloseBraceToken.SpanStart;
+        var closeBraceIndent = GetLineIndent(source, closeBraceLineStart);
         var memberIndent = closeBraceIndent + "    ";
-        var methodText = $"{memberIndent}{returnType} {methodName}({CreateParametersText(parameters, defaultParameters)});{newline}";
+        var insertionPrefix = closeBraceIsOnOwnLine ? string.Empty : newline;
+        var methodText = $"{insertionPrefix}{memberIndent}{returnType} {methodName}({CreateParametersText(parameters, defaultParameters)});{newline}";
 
         return source.Insert(closeBracePosition, methodText);
     }
@@ -42,7 +48,8 @@ public sealed class CSharpSyntaxEditor
         string methodName,
         IReadOnlyList<(string Type, string Name)> parameters,
         string bodyStatement,
-        HashSet<string>? defaultParameters = null)
+        HashSet<string>? defaultParameters = null,
+        bool isAsync = true)
     {
         var root = ParseRoot(source);
         var classDeclaration = root.DescendantNodes()
@@ -56,13 +63,19 @@ public sealed class CSharpSyntaxEditor
         }
 
         var newline = DetectNewLine(source);
-        var closeBracePosition = GetLineStartPosition(source, classDeclaration.CloseBraceToken.SpanStart);
-        var closeBraceIndent = GetLineIndent(source, closeBracePosition);
+        var closeBraceLineStart = GetLineStartPosition(source, classDeclaration.CloseBraceToken.SpanStart);
+        var closeBraceIsOnOwnLine = string.IsNullOrWhiteSpace(
+            source[closeBraceLineStart..classDeclaration.CloseBraceToken.SpanStart]);
+        var closeBracePosition = closeBraceIsOnOwnLine
+            ? closeBraceLineStart
+            : classDeclaration.CloseBraceToken.SpanStart;
+        var closeBraceIndent = GetLineIndent(source, closeBraceLineStart);
         var memberIndent = closeBraceIndent + "    ";
         var bodyIndent = memberIndent + "    ";
-        var methodText = string.Join(newline, new[]
+        var insertionPrefix = closeBraceIsOnOwnLine ? string.Empty : newline;
+        var methodText = insertionPrefix + string.Join(newline, new[]
         {
-            $"{memberIndent}public async {returnType} {methodName}({CreateParametersText(parameters, defaultParameters)})",
+            $"{memberIndent}public {(isAsync ? "async " : string.Empty)}{returnType} {methodName}({CreateParametersText(parameters, defaultParameters)})",
             $"{memberIndent}{{",
             FormatBody(bodyStatement, bodyIndent, newline),
             $"{memberIndent}}}",
@@ -151,6 +164,28 @@ public sealed class CSharpSyntaxEditor
             .OfType<IdentifierNameSyntax>()
             .Any(identifier => identifier.Identifier.ValueText == typeName);
         if (!hasReference)
+        {
+            return source;
+        }
+
+        return AddUsing(source, namespaceToAdd);
+    }
+
+    public string AddUsing(string source, string namespaceToAdd)
+    {
+        if (string.IsNullOrWhiteSpace(namespaceToAdd))
+        {
+            return source;
+        }
+
+        var root = ParseRoot(source);
+        var currentNamespace = root.Members.OfType<BaseNamespaceDeclarationSyntax>().FirstOrDefault()?.Name.ToString();
+        if (string.Equals(currentNamespace, namespaceToAdd, StringComparison.Ordinal))
+        {
+            return source;
+        }
+
+        if (root.Usings.Any(u => string.Equals(u.Name?.ToString(), namespaceToAdd, StringComparison.Ordinal)))
         {
             return source;
         }

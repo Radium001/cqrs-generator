@@ -9,6 +9,7 @@ using CqrsGenerator.Core.Workflows;
 using CqrsGenerator.Gui.Models;
 using CqrsGenerator.Gui.Services;
 using CqrsGenerator.Gui.Services.Generators;
+using CqrsGenerator.Gui.Services.Updates;
 using CqrsGenerator.Gui.Session;
 using CqrsGenerator.Gui.Session.Definitions;
 using CqrsGenerator.Gui.Session.States;
@@ -26,10 +27,7 @@ public partial class GuiStateTests
         var session = new AddQueryRootSessionViewModel(
             new GenerationActionDescriptor("add-query", "Add Query", "Application", "Ready", true),
             new StubAddQueryPlanService(),
-            new StubAddDtoPlanService(),
-            new AddDtoScenarioOutlineBuilder(),
-            new QueryServiceSuggestionService(),
-            new AddQueryScenarioOutlineBuilder());
+            new QueryServiceSuggestionService());
 
         session.AddParameterCommand.Execute(null);
         session.AddParameterCommand.Execute(null);
@@ -49,7 +47,6 @@ public partial class GuiStateTests
         var session = new DtoRootSessionViewModel(
             actionDescriptor: null,
             new StubAddDtoPlanService(),
-            new AddDtoScenarioOutlineBuilder(),
             isStandalone: false);
         session.DtoNameCyclic.Text = "UserLookup";
         session.PropertyEditor.AddEntryCommand.Execute(null);
@@ -119,10 +116,7 @@ public partial class GuiStateTests
         var rootSession = new AddQueryRootSessionViewModel(
             new GenerationActionDescriptor("add-query", "Add Query", "Application", "Ready", true),
             new StubAddQueryPlanService(),
-            new StubAddDtoPlanService(),
-            new AddDtoScenarioOutlineBuilder(),
-            new QueryServiceSuggestionService(),
-            new AddQueryScenarioOutlineBuilder());
+            new QueryServiceSuggestionService());
 
         stack.OpenRoot(rootSession);
 
@@ -142,10 +136,7 @@ public partial class GuiStateTests
         var rootSession = new AddQueryRootSessionViewModel(
             new GenerationActionDescriptor("add-query", "Add Query", "Application", "Ready", true),
             new StubAddQueryPlanService(),
-            new StubAddDtoPlanService(),
-            new AddDtoScenarioOutlineBuilder(),
-            new QueryServiceSuggestionService(),
-            new AddQueryScenarioOutlineBuilder());
+            new QueryServiceSuggestionService());
 
         stack.OpenRoot(rootSession);
         stack.CloseRootCommand.Execute(null);
@@ -229,8 +220,6 @@ public partial class GuiStateTests
             CreateQueryServiceMethod = true,
             MethodName = "GetUsersAsync",
         });
-        generationSession.References.SetRef(queryNode.Id, "Feature", new ArtifactRef(GeneratorNodeKind.Feature, ArtifactOrigin.Project, "Users", FeaturePath: "Users"));
-
         var rootSession = new TestPlanBuildingRootSession { Node = queryNode };
         var planService = new CapturingAddQueryPlanService();
         var definitions = new GeneratorDefinitionCatalog([new QueryGeneratorDefinition()]);
@@ -328,7 +317,8 @@ public partial class GuiStateTests
             new StubThemeService(),
             workspaceStore,
             sessionService,
-            generatorHost);
+            generatorHost,
+            CreateAppUpdateViewModel(workspaceStore));
 
         var action = mainWindow.GeneratorHost.ActionLauncher.Groups
             .SelectMany(group => group.Actions)
@@ -370,7 +360,8 @@ public partial class GuiStateTests
             new StubThemeService(),
             workspaceStore,
             sessionService,
-            generatorHost);
+            generatorHost,
+            CreateAppUpdateViewModel(workspaceStore));
 
         var action = mainWindow.GeneratorHost.ActionLauncher.Groups
             .SelectMany(group => group.Actions)
@@ -433,10 +424,7 @@ public partial class GuiStateTests
         var session = new AddQueryRootSessionViewModel(
             new GenerationActionDescriptor("add-query", "Add Query", "Application", "Ready", true),
             new StubAddQueryPlanService(),
-            new StubAddDtoPlanService(),
-            new AddDtoScenarioOutlineBuilder(),
-            new QueryServiceSuggestionService(),
-            new AddQueryScenarioOutlineBuilder());
+            new QueryServiceSuggestionService());
 
         session.UpdateWorkspace(projectContext);
         session.QueryName = "GetUsers";
@@ -466,10 +454,7 @@ public partial class GuiStateTests
         var session = new AddQueryRootSessionViewModel(
             new GenerationActionDescriptor("add-query", "Add Query", "Application", "Ready", true),
             new StubAddQueryPlanService(),
-            new StubAddDtoPlanService(),
-            new AddDtoScenarioOutlineBuilder(),
-            new QueryServiceSuggestionService(),
-            new AddQueryScenarioOutlineBuilder());
+            new QueryServiceSuggestionService());
         session.UpdateWorkspace(projectContext);
         session.QueryName = "GetUsers";
         Assert.Equal("GetUsers", session.MethodNameCyclic.Text);
@@ -498,7 +483,8 @@ public partial class GuiStateTests
             new StubThemeService(),
             workspaceStore,
             sessionService,
-            generatorHost);
+            generatorHost,
+            CreateAppUpdateViewModel(workspaceStore));
 
         var action = mainWindow.GeneratorHost.ActionLauncher.Groups
             .SelectMany(group => group.Actions)
@@ -523,54 +509,6 @@ public partial class GuiStateTests
     }
 
 
-
-    [Fact]
-    public void AddWebPagePlanService_BuildPlan_MergesQueryDraftPlansWithPagePlan()
-    {
-        using var tmp = new TempProject();
-        var context = new ProjectWorkspaceContext(
-            tmp.Root,
-            GeneratorConfig.ForTargetRoot(tmp.Root),
-            CreateWebProjectModel(tmp.Root));
-        var queryPlanService = new CapturingAddQueryPlanServiceWithPlanFactory(draft =>
-        {
-            var plan = new GenerationPlan();
-            plan.AddCreateFile(
-                Path.Combine(tmp.Root, "Application", "Features", draft.FeaturePath ?? "Users", "Queries", $"{draft.QueryName}.cs"),
-                $"public class {draft.QueryName} {{ }}");
-            return plan;
-        });
-        var planService = new AddWebPagePlanService(new CoreWorkflowFactory(), queryPlanService);
-        var formState = new AddWebPageFormState(
-            "Users",
-            "Users",
-            "UsersPage",
-            "/users",
-            true,
-            [new WebPageQueryBindingState("GetUsersQuery", "UserDto", string.Empty, ResponseShape.Single, true)],
-            [new AddQueryFormState(
-                "Users",
-                "Users",
-                "GetUsersQuery",
-                "UserDto",
-                false,
-                null,
-                ResponseShape.Single,
-                [],
-                null,
-                false,
-                "GetUsersAsync",
-                false,
-                false,
-                false)]);
-
-        var plan = planService.BuildPlan(context, formState);
-
-        Assert.Single(queryPlanService.BuiltDrafts);
-        Assert.Contains(plan.Operations, operation => operation.Path.EndsWith("GetUsersQuery.cs", StringComparison.Ordinal));
-        Assert.Contains(plan.Operations, operation => operation.Path.EndsWith("UsersPage.razor", StringComparison.Ordinal));
-        Assert.Contains(plan.Operations, operation => operation.Path.EndsWith("_Imports.razor", StringComparison.Ordinal));
-    }
 
     [Fact]
     public async Task ApplySuccess_TriggersRescanAndWarningRefresh()
@@ -896,10 +834,7 @@ public partial class GuiStateTests
         _ = new AddQueryRootSessionViewModel(
             new GenerationActionDescriptor("add-query", "Add Query", "Application", "Ready", true),
             new StubAddQueryPlanService(),
-            new StubAddDtoPlanService(),
-            new AddDtoScenarioOutlineBuilder(),
-            new QueryServiceSuggestionService(),
-            new AddQueryScenarioOutlineBuilder());
+            new QueryServiceSuggestionService());
 
         var warnings = CreateArchitectureWarningService().GetWarnings(projectContext);
 
@@ -924,10 +859,7 @@ public partial class GuiStateTests
         var session = new AddQueryRootSessionViewModel(
             new GenerationActionDescriptor("add-query", "Add Query", "Application", "Ready", true),
             new StubAddQueryPlanService(),
-            new StubAddDtoPlanService(),
-            new AddDtoScenarioOutlineBuilder(),
-            new QueryServiceSuggestionService(),
-            new AddQueryScenarioOutlineBuilder());
+            new QueryServiceSuggestionService());
 
         var resolvedViewType = ViewLocator.ResolveViewType(session);
         var fallbackView = viewLocator.Build(new UnknownGeneratorSession());
@@ -1127,10 +1059,7 @@ public partial class GuiStateTests
             new AddQueryScenarioDefinition(() => new AddQueryRootSessionViewModel(
                 new GenerationActionDescriptor("add-query", "Add Query", "Application", "Ready", true),
                 new StubAddQueryPlanService(),
-                new StubAddDtoPlanService(),
-                new AddDtoScenarioOutlineBuilder(),
-                new QueryServiceSuggestionService(),
-                new AddQueryScenarioOutlineBuilder()))
+                new QueryServiceSuggestionService()))
         ]);
     }
 
@@ -1202,24 +1131,6 @@ public partial class GuiStateTests
         {
             BuiltDrafts.Add(formState);
             return _planFactory(formState);
-        }
-    }
-
-    private sealed class CapturingAddWebPagePlanService : IAddWebPagePlanService
-    {
-        private readonly GenerationPlan _plan;
-
-        public CapturingAddWebPagePlanService(GenerationPlan plan)
-        {
-            _plan = plan;
-        }
-
-        public AddWebPageFormState? LastFormState { get; private set; }
-
-        public GenerationPlan BuildPlan(ProjectWorkspaceContext context, AddWebPageFormState formState)
-        {
-            LastFormState = formState;
-            return _plan;
         }
     }
 
@@ -1318,6 +1229,9 @@ public partial class GuiStateTests
 
         public Task<bool> ConfirmPlanApplyAsync(PreparedApplyPackage package, CancellationToken cancellationToken) =>
             Task.FromResult(_confirmResult);
+
+        public Task<bool> ConfirmUpdateInstallAsync(string? availableVersion, string message, CancellationToken cancellationToken) =>
+            Task.FromResult(_confirmResult);
     }
 
     private sealed class CapturingDialogService : IDialogService
@@ -1335,6 +1249,29 @@ public partial class GuiStateTests
         {
             LastPackage = package;
             return Task.FromResult(_confirmResult);
+        }
+
+        public Task<bool> ConfirmUpdateInstallAsync(string? availableVersion, string message, CancellationToken cancellationToken) =>
+            Task.FromResult(_confirmResult);
+    }
+
+    private static AppUpdateViewModel CreateAppUpdateViewModel(IWorkspaceStore workspaceStore) =>
+        new(new StubAppUpdateService(), workspaceStore, new StubDialogService(false));
+
+    private sealed class StubAppUpdateService : IAppUpdateService
+    {
+        public bool IsSupported => false;
+
+        public string CurrentVersion => "test";
+
+        public Task<UpdateCheckResult> CheckForUpdatesAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(new UpdateCheckResult(false, false, CurrentVersion, null, "Unsupported in tests.", null));
+
+        public Task DownloadUpdatesAsync(UpdateCheckResult update, IProgress<int> progress, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public void ApplyUpdatesAndRestart(UpdateCheckResult update)
+        {
         }
     }
 
@@ -1661,7 +1598,6 @@ public partial class GuiStateTests
         Assert.Contains(items, i => i.DisplayText == "ICurrentUserContext");
         Assert.Contains(items, i => i.DisplayText == "IUnitOfWork");
         Assert.All(items, i => Assert.False(i.IsSelected));
-        Assert.All(items, i => Assert.False(i.IsRuntime));
     }
 
     [Fact]
@@ -1680,78 +1616,6 @@ public partial class GuiStateTests
 
         picker.DeselectAllCommand.Execute(null);
         Assert.Empty(picker.SelectedKeys);
-    }
-
-    [Fact]
-    public void MultiSelectListPicker_AddRuntimeItem_DoesNotCrash()
-    {
-        var picker = new MultiSelectListPickerViewModel
-        {
-            ItemNameSelector = item => item?.ToString() ?? string.Empty,
-            ItemKeySelector = item => item?.ToString() ?? string.Empty,
-        };
-
-        picker.AddRuntime("IMyService", isSelected: true);
-
-        var items = picker.FilteredItems.Cast<WrappedListItem>().ToList();
-        Assert.Single(items);
-        Assert.True(items[0].IsRuntime);
-        Assert.True(items[0].IsSelected);
-    }
-
-    [Fact]
-    public void MultiSelectListPicker_AddRuntimeItemThenToggle_DoesNotCrash()
-    {
-        var picker = new MultiSelectListPickerViewModel
-        {
-            ItemNameSelector = item => item?.ToString() ?? string.Empty,
-            ItemKeySelector = item => item?.ToString() ?? string.Empty,
-        };
-
-        picker.AddRuntime("IMyService", isSelected: true);
-        var items = picker.FilteredItems.Cast<WrappedListItem>().ToList();
-
-        picker.ToggleItemCommand.Execute(items[0].OriginalItem);
-
-        var afterToggle = picker.FilteredItems.Cast<WrappedListItem>().ToList();
-        Assert.False(afterToggle[0].IsSelected);
-    }
-
-    [Fact]
-    public void MultiSelectListPicker_RuntimeSelectionSurvivesRebuild()
-    {
-        var picker = new MultiSelectListPickerViewModel
-        {
-            ItemNameSelector = item => item?.ToString() ?? string.Empty,
-            ItemKeySelector = item => item?.ToString() ?? string.Empty,
-        };
-
-        picker.AddRuntime("IMyService", isSelected: true);
-        picker.SearchText = "My";
-        picker.SearchText = string.Empty;
-
-        var items = picker.FilteredItems.Cast<WrappedListItem>().ToList();
-        Assert.Single(items);
-        Assert.True(items[0].IsSelected);
-        Assert.Contains("IMyService", picker.SelectedDisplayTexts);
-    }
-
-    [Fact]
-    public void MultiSelectListPicker_SetDiscoveredThenAddRuntime_ShowsBoth()
-    {
-        var picker = new MultiSelectListPickerViewModel
-        {
-            ItemNameSelector = item => item?.ToString() ?? string.Empty,
-            ItemKeySelector = item => item?.ToString() ?? string.Empty,
-        };
-
-        picker.SetDiscovered(new List<string> { "ICurrentUserContext" });
-        picker.AddRuntime("IMyService", isSelected: true);
-
-        var items = picker.FilteredItems.Cast<WrappedListItem>().ToList();
-        Assert.Equal(2, items.Count);
-        Assert.Contains(items, i => i.DisplayText == "ICurrentUserContext" && !i.IsRuntime);
-        Assert.Contains(items, i => i.IsRuntime);
     }
 
     [Fact]
@@ -1791,7 +1655,6 @@ public partial class GuiStateTests
         var session = new DtoRootSessionViewModel(
             actionDescriptor: null,
             new StubAddDtoPlanService(),
-            new AddDtoScenarioOutlineBuilder(),
             isStandalone: true);
         session.SetGenerationSession(new GenerationSession());
 
@@ -1871,6 +1734,146 @@ public partial class GuiStateTests
         Assert.Equal("IEnumerable<UserDto>", item.PrimaryText);
     }
 
+    [Fact]
+    public void CyclicInput_SetFullText_SeparatesKnownPrefixAndPreservesCustomVerb()
+    {
+        var input = new CyclicInputViewModel
+        {
+            Prefixes = ["", .. GeneratorConstants.CommandVerbPrefixes],
+            Suffixes = [""],
+            SelectedIndex = 1,
+        };
+
+        input.SetFullText("UpdateUser");
+
+        Assert.Equal("Update", input.CurrentPrefix);
+        Assert.Equal("User", input.Text);
+        Assert.Equal("UpdateUser", input.FullText);
+
+        input.SetFullText("ActivateUser");
+
+        Assert.Equal("", input.CurrentPrefix);
+        Assert.Equal("ActivateUser", input.Text);
+        Assert.Equal("ActivateUser", input.FullText);
+    }
+
+    [Fact]
+    public void CommandRootSession_OffersAllVerbPrefixesAndRestoresSavedName()
+    {
+        var state = new CommandGeneratorState { CommandName = "DeleteUser" };
+        var node = new GeneratorNode
+        {
+            Kind = GeneratorNodeKind.Command,
+            State = state,
+        };
+
+        var session = new CommandRootSessionViewModel(
+            new GenerationActionDescriptor("add-command", "Add Command", "Application", "Ready", true),
+            new StubAddCommandPlanService(),
+            node: node);
+
+        Assert.Equal(["", "Create", "Update", "Delete"], session.CommandNameCyclic.Prefixes);
+        Assert.Equal("Delete", session.CommandNameCyclic.CurrentPrefix);
+        Assert.Equal("User", session.CommandNameCyclic.Text);
+        Assert.Equal("DeleteUser", session.CommandName);
+        Assert.Equal("DeleteUser", state.CommandName);
+        var id = Assert.Single(session.Parameters);
+        Assert.Equal("int", id.Type);
+        Assert.Equal("Id", id.Name);
+        Assert.Equal(new PropertySpec("int", "Id"), Assert.Single(state.Parameters));
+    }
+
+    [Fact]
+    public void CommandRootSession_DeleteWithExistingParameters_DoesNotAddOrLoseParameters()
+    {
+        var state = new CommandGeneratorState { CommandName = "DeleteUser" };
+        state.Parameters.Add(new PropertySpec("string", "ExternalKey"));
+        var node = new GeneratorNode
+        {
+            Kind = GeneratorNodeKind.Command,
+            State = state,
+        };
+
+        var session = new CommandRootSessionViewModel(
+            new GenerationActionDescriptor("add-command", "Add Command", "Application", "Ready", true),
+            new StubAddCommandPlanService(),
+            node: node);
+
+        var parameter = Assert.Single(session.Parameters);
+        Assert.Equal("string", parameter.Type);
+        Assert.Equal("ExternalKey", parameter.Name);
+        Assert.Equal(new PropertySpec("string", "ExternalKey"), Assert.Single(state.Parameters));
+    }
+
+    [Fact]
+    public void CommandRootSession_SwitchingEmptyCommandToDelete_AddsId()
+    {
+        var state = new CommandGeneratorState { CommandName = "CreateUser" };
+        var node = new GeneratorNode
+        {
+            Kind = GeneratorNodeKind.Command,
+            State = state,
+        };
+        var session = new CommandRootSessionViewModel(
+            new GenerationActionDescriptor("add-command", "Add Command", "Application", "Ready", true),
+            new StubAddCommandPlanService(),
+            node: node);
+
+        session.CommandNameCyclic.SetFullText("DeleteUser");
+
+        var parameter = Assert.Single(session.Parameters);
+        Assert.Equal("int", parameter.Type);
+        Assert.Equal("Id", parameter.Name);
+    }
+
+    [Fact]
+    public void CommandRootSession_RestoresAndPersistsGenerateHandlerBody()
+    {
+        var state = new CommandGeneratorState
+        {
+            CommandName = "CreateUser",
+            GenerateHandlerBody = false,
+        };
+        var node = new GeneratorNode
+        {
+            Kind = GeneratorNodeKind.Command,
+            State = state,
+        };
+        var session = new CommandRootSessionViewModel(
+            new GenerationActionDescriptor("add-command", "Add Command", "Application", "Ready", true),
+            new StubAddCommandPlanService(),
+            node: node);
+
+        Assert.False(session.GenerateHandlerBody);
+
+        session.GenerateHandlerBody = true;
+
+        Assert.True(state.GenerateHandlerBody);
+    }
+
+    [Fact]
+    public void QueryRootSession_OffersAllVerbPrefixesAndRestoresSavedName()
+    {
+        var state = new QueryGeneratorState { QueryName = "SearchUsers" };
+        var node = new GeneratorNode
+        {
+            Kind = GeneratorNodeKind.Query,
+            State = state,
+        };
+
+        var session = new AddQueryRootSessionViewModel(
+            actionDescriptor: null,
+            new StubAddQueryPlanService(),
+            new QueryServiceSuggestionService(),
+            node: node);
+
+        Assert.Equal(["", "Get", "Find", "Fetch", "Search", "List", "Load"], session.QueryNameCyclic.Prefixes);
+        Assert.Equal("Search", session.QueryNameCyclic.CurrentPrefix);
+        Assert.Equal("Users", session.QueryNameCyclic.Text);
+        Assert.Equal("SearchUsers", session.QueryName);
+        Assert.Equal("SearchUsers", state.QueryName);
+    }
+
 
 
     [Fact]
@@ -1909,7 +1912,6 @@ public partial class GuiStateTests
         var firstSession = new CreateFeatureRootSessionViewModel(
             actionDescriptor: null,
             new StubCreateFeaturePlanService(),
-            new CreateFeatureScenarioOutlineBuilder(),
             isStandalone: false,
             node: node);
         firstSession.UpdateWorkspace(projectContext);
@@ -1922,7 +1924,6 @@ public partial class GuiStateTests
         var reopenedSession = new CreateFeatureRootSessionViewModel(
             actionDescriptor: null,
             new StubCreateFeaturePlanService(),
-            new CreateFeatureScenarioOutlineBuilder(),
             isStandalone: false,
             node: node);
         reopenedSession.UpdateWorkspace(projectContext);
@@ -1942,12 +1943,6 @@ public partial class GuiStateTests
         var session = new CommandRootSessionViewModel(
             new GenerationActionDescriptor("add-command", "Add Command", "Application", "Ready", true),
             new StubAddCommandPlanService(),
-            new AddCommandScenarioOutlineBuilder(),
-            new StubAddRepositoryPlanService(),
-            new AddRepositoryScenarioOutlineBuilder(),
-            new StubAddEntityPlanService(),
-            new AddEntityScenarioOutlineBuilder(),
-            new EfEntityPreparationService(),
             node: commandNode);
 
         var nodes = session.GetScenarioNodes();
@@ -1976,10 +1971,7 @@ public partial class GuiStateTests
         var rootSession = new AddQueryRootSessionViewModel(
             new GenerationActionDescriptor("add-query", "Add Query", "Application", "Ready", true),
             new StubAddQueryPlanService(),
-            new StubAddDtoPlanService(),
-            new AddDtoScenarioOutlineBuilder(),
-            new QueryServiceSuggestionService(),
-            new AddQueryScenarioOutlineBuilder());
+            new QueryServiceSuggestionService());
 
         host.Stack.OpenRoot(rootSession);
 
@@ -2006,13 +1998,11 @@ public partial class GuiStateTests
         var session = new AddQueryRootSessionViewModel(
             new GenerationActionDescriptor("add-query", "Add Query", "Application", "Ready", true),
             new StubAddQueryPlanService(),
-            new StubAddDtoPlanService(),
-            new AddDtoScenarioOutlineBuilder(),
-            new QueryServiceSuggestionService(),
-            new AddQueryScenarioOutlineBuilder());
+            new QueryServiceSuggestionService());
 
         stack.OpenRoot(session);
-        var originalFeatureRef = genSession.References.GetRef(session.Node.Id, "Feature");
+        var queryState = Assert.IsType<QueryGeneratorState>(session.Node!.State);
+        var originalFeatureRef = queryState.FeatureRef;
         session.OpenCreateFeatureCommand.Execute(null);
 
         var featureNode = Assert.IsType<GeneratorNode>(genSession.ActiveNode);
@@ -2020,11 +2010,10 @@ public partial class GuiStateTests
 
         stack.DoneNestedCommand.Execute(null);
 
-        var queryState = Assert.IsType<QueryGeneratorState>(session.Node!.State);
         Assert.Equal(session.Node!.Id, genSession.ActiveNode?.Id);
         Assert.Equal(GeneratorNodeLifecycle.Committed, featureNode.Lifecycle);
-        Assert.NotEqual(originalFeatureRef?.NodeId, genSession.References.GetRef(session.Node.Id, "Feature")?.NodeId);
-        Assert.Equal(featureNode.Id, genSession.References.GetRef(session.Node.Id, "Feature")?.NodeId);
+        Assert.NotEqual(originalFeatureRef?.NodeId, queryState.FeatureRef?.NodeId);
+        Assert.Equal(featureNode.Id, queryState.FeatureRef?.NodeId);
         Assert.Equal(featureNode.Id, session.SelectedFeature?.NodeId);
     }
 
@@ -2038,13 +2027,11 @@ public partial class GuiStateTests
         var session = new AddQueryRootSessionViewModel(
             new GenerationActionDescriptor("add-query", "Add Query", "Application", "Ready", true),
             new StubAddQueryPlanService(),
-            new StubAddDtoPlanService(),
-            new AddDtoScenarioOutlineBuilder(),
-            new QueryServiceSuggestionService(),
-            new AddQueryScenarioOutlineBuilder());
+            new QueryServiceSuggestionService());
 
         stack.OpenRoot(session);
-        var originalFeatureRef = genSession.References.GetRef(session.Node.Id, "Feature");
+        var queryState = Assert.IsType<QueryGeneratorState>(session.Node!.State);
+        var originalFeatureRef = queryState.FeatureRef;
         session.OpenCreateFeatureCommand.Execute(null);
 
         var featureNode = Assert.IsType<GeneratorNode>(genSession.ActiveNode);
@@ -2052,10 +2039,9 @@ public partial class GuiStateTests
 
         stack.CancelNestedCommand.Execute(null);
 
-        var queryState = Assert.IsType<QueryGeneratorState>(session.Node!.State);
         Assert.Null(genSession.FindNode(featureNode.Id));
         Assert.Equal(session.Node!.Id, genSession.ActiveNode?.Id);
-        Assert.Equal(originalFeatureRef?.NodeId, genSession.References.GetRef(session.Node.Id, "Feature")?.NodeId);
+        Assert.Equal(originalFeatureRef?.NodeId, queryState.FeatureRef?.NodeId);
         Assert.DoesNotContain(session.FeatureItems, feature => feature.NodeId == featureNode.Id);
     }
 
@@ -2068,10 +2054,7 @@ public partial class GuiStateTests
         var session = new AddQueryRootSessionViewModel(
             new GenerationActionDescriptor("add-query", "Add Query", "Application", "Ready", true),
             new StubAddQueryPlanService(),
-            new StubAddDtoPlanService(),
-            new AddDtoScenarioOutlineBuilder(),
-            new QueryServiceSuggestionService(),
-            new AddQueryScenarioOutlineBuilder());
+            new QueryServiceSuggestionService());
         session.SetGenerationSession(genSession, navigator);
         session.UpdateWorkspace(projectContext);
         Assert.NotNull(session.SelectedFeature);
@@ -2083,7 +2066,6 @@ public partial class GuiStateTests
         var dtoSession = new DtoRootSessionViewModel(
             actionDescriptor: null,
             new StubAddDtoPlanService(),
-            new AddDtoScenarioOutlineBuilder(),
             isStandalone: false,
             node: dtoNode);
         dtoSession.SetGenerationSession(genSession);
@@ -2104,10 +2086,7 @@ public partial class GuiStateTests
         var querySession = new AddQueryRootSessionViewModel(
             new GenerationActionDescriptor("add-query", "Add Query", "Application", "Ready", true),
             new StubAddQueryPlanService(),
-            new StubAddDtoPlanService(),
-            new AddDtoScenarioOutlineBuilder(),
-            new QueryServiceSuggestionService(),
-            new AddQueryScenarioOutlineBuilder());
+            new QueryServiceSuggestionService());
         stack.OpenRoot(querySession);
         querySession.OpenCreateFeatureCommand.Execute(null);
         var featureNode = Assert.IsType<GeneratorNode>(genSession.ActiveNode);
@@ -2119,7 +2098,6 @@ public partial class GuiStateTests
         var dtoSession = new DtoRootSessionViewModel(
             actionDescriptor: null,
             new StubAddDtoPlanService(),
-            new AddDtoScenarioOutlineBuilder(),
             isStandalone: false,
             node: dtoNode);
         dtoSession.SetGenerationSession(genSession);
@@ -2139,10 +2117,7 @@ public partial class GuiStateTests
         var session = new AddQueryRootSessionViewModel(
             new GenerationActionDescriptor("add-query", "Add Query", "Application", "Ready", true),
             new StubAddQueryPlanService(),
-            new StubAddDtoPlanService(),
-            new AddDtoScenarioOutlineBuilder(),
-            new QueryServiceSuggestionService(),
-            new AddQueryScenarioOutlineBuilder());
+            new QueryServiceSuggestionService());
 
         stack.OpenRoot(session);
         session.OpenCreateDtoCommand.Execute(null);
@@ -2153,7 +2128,7 @@ public partial class GuiStateTests
         var queryState = Assert.IsType<QueryGeneratorState>(session.Node!.State);
         Assert.Equal(GeneratorNodeLifecycle.Committed, dtoNode.Lifecycle);
         Assert.Equal(session.Node!.Id, genSession.ActiveNode?.Id);
-        Assert.Equal(dtoNode.Id, genSession.References.GetRef(session.Node.Id, "ResultDto")?.NodeId);
+        Assert.Equal(dtoNode.Id, queryState.ResultDtoRef?.NodeId);
         Assert.Equal(dtoNode.Id, session.SelectedDtoChoice?.NodeId);
     }
 
@@ -2167,22 +2142,19 @@ public partial class GuiStateTests
         var session = new AddQueryRootSessionViewModel(
             new GenerationActionDescriptor("add-query", "Add Query", "Application", "Ready", true),
             new StubAddQueryPlanService(),
-            new StubAddDtoPlanService(),
-            new AddDtoScenarioOutlineBuilder(),
-            new QueryServiceSuggestionService(),
-            new AddQueryScenarioOutlineBuilder());
+            new QueryServiceSuggestionService());
 
         stack.OpenRoot(session);
-        var originalDtoRef = genSession.References.GetRef(session.Node.Id, "ResultDto");
+        var queryState = Assert.IsType<QueryGeneratorState>(session.Node!.State);
+        var originalDtoRef = queryState.ResultDtoRef;
         session.OpenCreateDtoCommand.Execute(null);
 
         var dtoNode = Assert.IsType<GeneratorNode>(genSession.ActiveNode);
         stack.CancelNestedCommand.Execute(null);
 
-        var queryState = Assert.IsType<QueryGeneratorState>(session.Node!.State);
         Assert.Null(genSession.FindNode(dtoNode.Id));
         Assert.Equal(session.Node!.Id, genSession.ActiveNode?.Id);
-        Assert.Equal(originalDtoRef?.NodeId, genSession.References.GetRef(session.Node.Id, "ResultDto")?.NodeId);
+        Assert.Equal(originalDtoRef?.NodeId, queryState.ResultDtoRef?.NodeId);
         Assert.DoesNotContain(session.ResultTypeItems, dto => dto.NodeId == dtoNode.Id);
     }
 
@@ -2196,10 +2168,6 @@ public partial class GuiStateTests
         var session = new RepositoryRootSessionViewModel(
             new GenerationActionDescriptor("add-repository", "Add Repository", "Application", "Ready", true),
             new StubAddRepositoryPlanService(),
-            new AddRepositoryScenarioOutlineBuilder(),
-            new StubAddEntityPlanService(),
-            new AddEntityScenarioOutlineBuilder(),
-            new EfEntityPreparationService(),
             isStandalone: true);
 
         stack.OpenRoot(session);
@@ -2224,10 +2192,6 @@ public partial class GuiStateTests
         var session = new RepositoryRootSessionViewModel(
             new GenerationActionDescriptor("add-repository", "Add Repository", "Application", "Ready", true),
             new StubAddRepositoryPlanService(),
-            new AddRepositoryScenarioOutlineBuilder(),
-            new StubAddEntityPlanService(),
-            new AddEntityScenarioOutlineBuilder(),
-            new EfEntityPreparationService(),
             isStandalone: true);
 
         stack.OpenRoot(session);
@@ -2252,13 +2216,7 @@ public partial class GuiStateTests
         var stack = new GeneratorStackViewModel(workspaceStore, genSession, navigator, CreateNestedValidationCatalog(), new StubServiceProvider());
         var session = new CommandRootSessionViewModel(
             new GenerationActionDescriptor("add-command", "Add Command", "Application", "Ready", true),
-            new StubAddCommandPlanService(),
-            new AddCommandScenarioOutlineBuilder(),
-            new StubAddRepositoryPlanService(),
-            new AddRepositoryScenarioOutlineBuilder(),
-            new StubAddEntityPlanService(),
-            new AddEntityScenarioOutlineBuilder(),
-            new EfEntityPreparationService());
+            new StubAddCommandPlanService());
 
         stack.OpenRoot(session);
         session.DependencyPicker.CreateRepositoryCommand!.Execute(null);
@@ -2280,13 +2238,7 @@ public partial class GuiStateTests
         var stack = new GeneratorStackViewModel(workspaceStore, genSession, navigator, CreateNestedValidationCatalog(), new StubServiceProvider());
         var session = new CommandRootSessionViewModel(
             new GenerationActionDescriptor("add-command", "Add Command", "Application", "Ready", true),
-            new StubAddCommandPlanService(),
-            new AddCommandScenarioOutlineBuilder(),
-            new StubAddRepositoryPlanService(),
-            new AddRepositoryScenarioOutlineBuilder(),
-            new StubAddEntityPlanService(),
-            new AddEntityScenarioOutlineBuilder(),
-            new EfEntityPreparationService());
+            new StubAddCommandPlanService());
 
         stack.OpenRoot(session);
         session.DependencyPicker.CreateRepositoryCommand!.Execute(null);
@@ -2300,87 +2252,7 @@ public partial class GuiStateTests
         Assert.DoesNotContain(session.DependencyPicker.GetSelectedOptions(), option => option.NodeId == repositoryNode.Id);
     }
 
-    [Fact]
-    public void WebPage_CreateQuery_Done_AddsQueryRef()
-    {
-        using var tmp = new TempProject();
-        var workspaceStore = CreateWorkspaceStore(tmp.Root);
-        workspaceStore.SetState(workspaceStore.State with
-        {
-            ProjectModel = CreateWebProjectModel(tmp.Root)
-        });
-        var (genSession, navigator) = CreateSessionAndNavigator();
-        var stack = new GeneratorStackViewModel(workspaceStore, genSession, navigator, CreateNestedValidationCatalog(), new StubServiceProvider());
-        var session = new AddWebPageRootSessionViewModel(
-            new GenerationActionDescriptor("add-web-page", "Add Web Page", "UI", "Ready", true),
-            new CapturingAddWebPagePlanService(new GenerationPlan()),
-            new StubAddQueryPlanService(),
-            new AddQueryScenarioOutlineBuilder(),
-            new AddWebPageScenarioOutlineBuilder(),
-            new QueryServiceSuggestionService());
 
-        stack.OpenRoot(session);
-        session.OpenCreateQueryCommand.Execute(null);
-
-        var queryNode = Assert.IsType<GeneratorNode>(genSession.ActiveNode);
-        stack.DoneNestedCommand.Execute(null);
-
-        var webPageState = Assert.IsType<WebPageGeneratorState>(session.Node!.State);
-        Assert.Contains(webPageState.QueryRefs, reference => reference.NodeId == queryNode.Id);
-        Assert.Contains(session.QueryPicker.GetSelectedOptionsByKey(), option => option.NodeId == queryNode.Id);
-    }
-
-    [Fact]
-    public void WebPage_CreateQuery_Cancel_DoesNotAddQueryRef()
-    {
-        using var tmp = new TempProject();
-        var workspaceStore = CreateWorkspaceStore(tmp.Root);
-        workspaceStore.SetState(workspaceStore.State with
-        {
-            ProjectModel = CreateWebProjectModel(tmp.Root)
-        });
-        var (genSession, navigator) = CreateSessionAndNavigator();
-        var stack = new GeneratorStackViewModel(workspaceStore, genSession, navigator, CreateNestedValidationCatalog(), new StubServiceProvider());
-        var session = new AddWebPageRootSessionViewModel(
-            new GenerationActionDescriptor("add-web-page", "Add Web Page", "UI", "Ready", true),
-            new CapturingAddWebPagePlanService(new GenerationPlan()),
-            new StubAddQueryPlanService(),
-            new AddQueryScenarioOutlineBuilder(),
-            new AddWebPageScenarioOutlineBuilder(),
-            new QueryServiceSuggestionService());
-
-        stack.OpenRoot(session);
-        session.OpenCreateQueryCommand.Execute(null);
-
-        var queryNode = Assert.IsType<GeneratorNode>(genSession.ActiveNode);
-        stack.CancelNestedCommand.Execute(null);
-
-        var webPageState = Assert.IsType<WebPageGeneratorState>(session.Node!.State);
-        Assert.Null(genSession.FindNode(queryNode.Id));
-        Assert.DoesNotContain(webPageState.QueryRefs, reference => reference.NodeId == queryNode.Id);
-        Assert.DoesNotContain(session.QueryPicker.GetSelectedOptionsByKey(), option => option.NodeId == queryNode.Id);
-    }
-
-
-
-    [Fact]
-    public void MultiSelectListPicker_SetDiscoveredEmpty_AddRuntime_HasRuntimeItem()
-    {
-        var picker = new MultiSelectListPickerViewModel
-        {
-            ItemNameSelector = item => item?.ToString() ?? string.Empty,
-            ItemKeySelector = item => item?.ToString() ?? string.Empty,
-        };
-
-        picker.SetDiscovered(new List<object>());
-        picker.AddRuntime("IMyService", isSelected: true);
-
-        var items = picker.FilteredItems.Cast<WrappedListItem>().ToList();
-        Assert.Single(items);
-        Assert.True(items[0].IsRuntime);
-        Assert.True(items[0].CanEdit);
-        Assert.True(items[0].CanRemove);
-    }
 
     [Fact]
     public void EntityRootSession_EfEntitySelection_DoesNotAutoSelectFields()
@@ -2428,7 +2300,6 @@ public partial class GuiStateTests
         return new EntityRootSessionViewModel(
             actionDescriptor: null,
             new StubAddEntityPlanService(),
-            new AddEntityScenarioOutlineBuilder(),
             new EfEntityPreparationService(),
             isStandalone: false);
     }

@@ -35,8 +35,8 @@
             <StackPanel Grid.Row="2"
                         Orientation="Vertical"
                         Spacing="8">
-              <CheckBox Content="Update web imports"
-                        IsChecked="{Binding UpdateWebImports, Mode=TwoWay}" />
+              <TextBlock Text="Web imports target" />
+              <shared:WrappedListPicker DataContext="{Binding WebImportsTarget.Picker}" />
             </StackPanel>
           </Grid>
 

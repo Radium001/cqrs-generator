@@ -9,8 +9,7 @@ public sealed record CreateFeatureBundleWorkflowRequest(
     IReadOnlyList<AddQueryWorkflowRequest>? Queries = null,
     IReadOnlyList<AddCommandScenarioWorkflowRequest>? Commands = null,
     EntityGenerationRequest? Entity = null,
-    AddRepositoryScenarioWorkflowRequest? Repository = null,
-    WebPageGenerationRequest? WebPage = null);
+    AddRepositoryScenarioWorkflowRequest? Repository = null);
 
 public sealed class CreateFeatureBundleWorkflow
 {
@@ -75,9 +74,5 @@ public sealed class CreateFeatureBundleWorkflow
                 .CreateServicePlan(request.QueryService));
         }
 
-        if (request.WebPage is not null)
-        {
-            _context.CreateAddWebPageWorkflow().ApplyToPlan(plan, request.WebPage);
-        }
     }
 }

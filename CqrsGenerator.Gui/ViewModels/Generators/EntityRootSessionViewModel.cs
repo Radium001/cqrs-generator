@@ -19,7 +19,6 @@ public sealed partial class EntityRootSessionViewModel : ObservableObject,
 {
     private readonly GenerationActionDescriptor? _actionDescriptor;
     private readonly IAddEntityPlanService _planService;
-    private readonly IAddEntityScenarioOutlineBuilder _scenarioOutlineBuilder;
     private readonly EfEntityPreparationService _efEntityPreparationService;
     private readonly bool _isStandalone;
     private EntityGeneratorState? _sessionState;
@@ -35,14 +34,12 @@ public sealed partial class EntityRootSessionViewModel : ObservableObject,
     public EntityRootSessionViewModel(
         GenerationActionDescriptor? actionDescriptor,
         IAddEntityPlanService planService,
-        IAddEntityScenarioOutlineBuilder scenarioOutlineBuilder,
         EfEntityPreparationService efEntityPreparationService,
         bool isStandalone,
         GeneratorNode? node = null)
     {
         _actionDescriptor = actionDescriptor;
         _planService = planService;
-        _scenarioOutlineBuilder = scenarioOutlineBuilder;
         _efEntityPreparationService = efEntityPreparationService;
         _isStandalone = isStandalone;
         Node = node;

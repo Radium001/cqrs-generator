@@ -24,9 +24,14 @@ public sealed class QueryServiceGenerator(
             : string.Join(", ", request.InitialParameters.Select(parameter => $"{parameter.Type} {StringUtilities.ToCamelCase(parameter.Name)}")) + $", {GeneratorConstants.CancellationTokenType} {GeneratorConstants.CancellationTokenParamName} = default";
 
         var dtoTypeName = request.DtoTypeName ?? ExtractDtoType(request.InitialReturnType);
+        var needsCollections = IsCollectionReturnType(request.InitialReturnType);
         var implementationBody = hasMethod && request.GenerateImplementationBody
             ? BuildDapperBody(request.InitialReturnType, dtoTypeName, request.InitialParameters)
             : null;
+        var methodTypes = request.InitialParameters
+            .Select(parameter => parameter.Type)
+            .Append(request.InitialReturnType)
+            .ToArray();
 
         plan.AddCreateFile(
             Path.Combine(config.ApplicationFeatureRootPath, featurePath, config.InterfacesFolderName, $"{request.InterfaceName}.cs"),
@@ -39,6 +44,13 @@ public sealed class QueryServiceGenerator(
                 method_return_type = request.InitialReturnType ?? "",
                 method_name = request.InitialMethodName ?? "",
                 method_parameters = methodParameters,
+                needs_collections = needsCollections,
+                usings_block = CSharpTypeMetadataResolver.CreateUsingsBlock(
+                    methodTypes,
+                    "System.Collections.Generic",
+                    "System.Threading",
+                    "System.Threading.Tasks"),
+                dto_namespace = request.DtoNamespace,
             }));
 
         plan.AddCreateFile(
@@ -54,6 +66,15 @@ public sealed class QueryServiceGenerator(
                 method_name = request.InitialMethodName ?? "",
                 method_parameters = methodParameters,
                 implementation_body = implementationBody ?? GeneratorConstants.DefaultStubBody,
+                method_is_async = implementationBody is not null,
+                needs_collections = needsCollections,
+                usings_block = CSharpTypeMetadataResolver.CreateUsingsBlock(
+                    methodTypes,
+                    "System",
+                    "System.Collections.Generic",
+                    "System.Threading",
+                    "System.Threading.Tasks"),
+                dto_namespace = request.DtoNamespace,
             }));
 
         if (request.AddDependencyInjectionRegistration)
@@ -87,13 +108,17 @@ public sealed class QueryServiceGenerator(
         {
             plan.TransformFile(
                 request.InterfacePath,
-                content => editor.AddMethodToInterface(
-                    content,
-                    request.InterfaceName,
+                content => AddRequiredUsings(
+                    editor.AddMethodToInterface(
+                        content,
+                        request.InterfaceName,
+                        request.ReturnType,
+                        request.MethodName,
+                        parameters,
+                        defaultParams),
                     request.ReturnType,
-                    request.MethodName,
-                    parameters,
-                    defaultParams));
+                    request.DtoNamespace,
+                    request.Parameters));
         }
         catch (InvalidOperationException exception)
         {
@@ -104,14 +129,19 @@ public sealed class QueryServiceGenerator(
         {
             plan.TransformFile(
                 request.ImplementationPath,
-                content => editor.AddMethodToClass(
-                    content,
-                    request.ImplementationName,
+                content => AddRequiredUsings(
+                    editor.AddMethodToClass(
+                        content,
+                        request.ImplementationName,
+                        request.ReturnType,
+                        request.MethodName,
+                        parameters,
+                        bodyStatement,
+                        defaultParams,
+                        isAsync: request.GenerateImplementationBody),
                     request.ReturnType,
-                    request.MethodName,
-                    parameters,
-                    bodyStatement,
-                    defaultParams));
+                    request.DtoNamespace,
+                    request.Parameters));
         }
         catch (InvalidOperationException exception)
         {
@@ -147,6 +177,15 @@ public sealed class QueryServiceGenerator(
         {
             throw new ArgumentException("Implementation namespace is required.", nameof(request.ImplementationNamespace));
         }
+        if (!string.IsNullOrWhiteSpace(request.InitialReturnType))
+        {
+            CSharpTypeMetadataResolver.EnsureValid(request.InitialReturnType, nameof(request.InitialReturnType));
+        }
+        foreach (var parameter in request.InitialParameters)
+        {
+            CSharpNameValidator.EnsureIdentifier(parameter.Name, nameof(parameter.Name));
+            CSharpTypeMetadataResolver.EnsureValid(parameter.Type, nameof(parameter.Type));
+        }
     }
 
     private static void ValidateMethod(QueryServiceMethodGenerationRequest request)
@@ -158,6 +197,12 @@ public sealed class QueryServiceGenerator(
         {
             throw new ArgumentException("Return type is required.", nameof(request.ReturnType));
         }
+        CSharpTypeMetadataResolver.EnsureValid(request.ReturnType, nameof(request.ReturnType));
+        foreach (var parameter in request.Parameters)
+        {
+            CSharpNameValidator.EnsureIdentifier(parameter.Name, nameof(parameter.Name));
+            CSharpTypeMetadataResolver.EnsureValid(parameter.Type, nameof(parameter.Type));
+        }
     }
 
     private static (string Type, string Name)[] CreateMethodParameters(QueryServiceMethodGenerationRequest request) =>
@@ -168,11 +213,55 @@ public sealed class QueryServiceGenerator(
 
     private static string BuildDapperBody(string? returnType, string? dtoType, IReadOnlyList<PropertySpec> parameters)
     {
-        var paramList = string.Join(", ", parameters.Select(p => $"@{p.Name}"));
-        var usesList = returnType?.Contains(GeneratorConstants.ListWrapperPrefix, StringComparison.Ordinal) == true || returnType?.Contains(GeneratorConstants.EnumerableWrapperPrefix, StringComparison.Ordinal) == true;
-        var method = usesList ? "QueryAsync" : "QueryFirstOrDefaultAsync";
-        return $"var sql = \"SELECT * FROM ... WHERE ...\";\n            var result = await _connection.{method}<{dtoType}>(sql, new {{ {paramList} }});\n            return result;";
+        var method = IsCollectionReturnType(returnType)
+            ? "QueryAsync"
+            : IsBooleanType(dtoType)
+                ? "ExecuteScalarOrDefaultAsync"
+                : "QueryFirstOrDefaultAsync";
+        var parameterArgument = parameters.Count == 0
+            ? string.Empty
+            : $", new {{ {string.Join(", ", parameters.Select(parameter => StringUtilities.ToCamelCase(parameter.Name)))} }}";
+        var cancellationArgument = parameters.Count == 0 ? ", ct: ct" : ", ct";
+
+        return $"var sql = \"SELECT * FROM ... WHERE ...\";\n            return await ExecuteAsync(x => x.{method}<{dtoType}>(sql{parameterArgument}{cancellationArgument}));";
     }
+
+    private string AddRequiredUsings(
+        string content,
+        string returnType,
+        string dtoNamespace,
+        IReadOnlyList<PropertySpec> parameters)
+    {
+        content = editor.AddUsing(content, "System");
+        content = editor.AddUsing(content, "System.Threading");
+        content = editor.AddUsing(content, "System.Threading.Tasks");
+
+        if (IsCollectionReturnType(returnType))
+        {
+            content = editor.AddUsing(content, "System.Collections.Generic");
+        }
+
+        foreach (var @namespace in CSharpTypeMetadataResolver.GetNamespaces(
+                     parameters.Select(parameter => parameter.Type).Append(returnType)))
+        {
+            content = editor.AddUsing(content, @namespace);
+        }
+
+        if (!string.IsNullOrWhiteSpace(dtoNamespace))
+        {
+            content = editor.AddUsing(content, dtoNamespace);
+        }
+
+        return content;
+    }
+
+    private static bool IsCollectionReturnType(string? returnType) =>
+        returnType?.Contains(GeneratorConstants.ListWrapperPrefix, StringComparison.Ordinal) == true
+        || returnType?.Contains(GeneratorConstants.EnumerableWrapperPrefix, StringComparison.Ordinal) == true;
+
+    private static bool IsBooleanType(string? typeName) =>
+        string.Equals(typeName, "bool", StringComparison.Ordinal)
+        || string.Equals(typeName, "System.Boolean", StringComparison.Ordinal);
 
     private static string? ExtractDtoType(string? returnType)
     {

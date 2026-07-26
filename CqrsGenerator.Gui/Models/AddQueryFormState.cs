@@ -16,7 +16,7 @@ public sealed record AddQueryFormState(
     string MethodName,
     bool GenerateHandlerBody,
     bool GenerateQueryServiceBody,
-    bool UpdateWebImports)
+    string? WebFeaturePath)
 {
     public AddQueryFormState(
         string? featureName,
@@ -32,7 +32,7 @@ public sealed record AddQueryFormState(
         string methodName,
         bool generateHandlerBody,
         bool generateQueryServiceBody,
-        bool updateWebImports)
+        string? webFeaturePath)
         : this(
             featureName,
             featurePath,
@@ -56,7 +56,7 @@ public sealed record AddQueryFormState(
             methodName,
             generateHandlerBody,
             generateQueryServiceBody,
-            updateWebImports)
+            webFeaturePath)
     {
     }
 

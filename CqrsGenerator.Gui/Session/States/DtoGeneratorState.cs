@@ -27,7 +27,9 @@ public sealed class DtoGeneratorState
 
     public string? Subfolder { get; set; }
 
-    public bool UpdateWebImports { get; set; } = true;
+    public ArtifactRef? WebFeatureRef { get; set; }
+
+    public bool HasWebFeatureSelection { get; set; }
 
     public ObservableCollection<PropertySpec> Properties { get; } = new();
 }

@@ -25,7 +25,7 @@ public sealed record AddQueryWorkflowRequest(
     bool GenerateHandlerBody,
     bool GenerateQueryServiceBody,
     QueryServiceMethodWorkflowRequest? QueryService,
-    bool UpdateWebImports = true)
+    string? WebFeaturePath = null)
 {
     public string DtoName => DtoSelection.DtoName;
 
@@ -45,7 +45,7 @@ public sealed record AddQueryWorkflowRequest(
         bool generateHandlerBody,
         bool generateQueryServiceBody,
         QueryServiceMethodWorkflowRequest? queryService,
-        bool updateWebImports = true)
+        string? webFeaturePath = null)
         : this(
             featurePath,
             queryName,
@@ -57,7 +57,7 @@ public sealed record AddQueryWorkflowRequest(
             generateHandlerBody,
             generateQueryServiceBody,
             queryService,
-            updateWebImports)
+            webFeaturePath)
     {
     }
 }
@@ -114,6 +114,7 @@ public sealed class AddQueryWorkflow
                     InitialParameters = request.Properties,
                     GenerateImplementationBody = request.GenerateQueryServiceBody,
                     DtoTypeName = request.DtoSelection.DtoName,
+                    DtoNamespace = dtoNamespace,
                 }));
             }
             else
@@ -129,17 +130,18 @@ public sealed class AddQueryWorkflow
                     Parameters = request.Properties,
                     GenerateImplementationBody = request.GenerateQueryServiceBody,
                     DtoTypeName = request.DtoSelection.DtoName,
+                    DtoNamespace = dtoNamespace,
                 });
             }
         }
 
-        if (request.UpdateWebImports)
+        if (!string.IsNullOrWhiteSpace(request.WebFeaturePath))
         {
             var config = _context.Config;
             var imports = _context.CreateRazorImportsGenerator();
             var queryNamespace = GenerationNaming.ToQueryNamespace(config, request.FeaturePath, request.QueryName);
 
-            imports.AddUsingsToPlan(plan, request.FeaturePath, [queryNamespace, dtoNamespace]);
+            imports.AddUsingsToPlan(plan, request.WebFeaturePath, [queryNamespace, dtoNamespace]);
         }
     }
 

@@ -26,12 +26,10 @@ public sealed class EntityGeneratorDefinition : GeneratorDefinition<EntityGenera
         GeneratorSessionServices services)
     {
         var planService = services.ServiceProvider.GetRequiredService<IAddEntityPlanService>();
-        var scenarioOutlineBuilder = services.ServiceProvider.GetRequiredService<IAddEntityScenarioOutlineBuilder>();
         var efPreparationService = services.ServiceProvider.GetRequiredService<EfEntityPreparationService>();
         return new EntityRootSessionViewModel(
             actionDescriptor: null,
             planService,
-            scenarioOutlineBuilder,
             efPreparationService,
             isStandalone: false,
             node: node);
@@ -79,7 +77,6 @@ public sealed class EntityGeneratorDefinition : GeneratorDefinition<EntityGenera
                 .ToArray(),
             state.GenerateFactoryMethod,
             state.GenerateEfMapping,
-            state.GenerateInterface,
             state.DomainMethods.ToArray());
 
         return planService.BuildPlan(core.WorkspaceContext, formState);

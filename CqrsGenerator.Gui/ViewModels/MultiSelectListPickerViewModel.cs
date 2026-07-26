@@ -1,6 +1,5 @@
 using System.Collections;
 using System.Collections.ObjectModel;
-using System.Collections.Specialized;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using CqrsGenerator.Gui.Session;
@@ -10,12 +9,8 @@ namespace CqrsGenerator.Gui.ViewModels;
 public sealed partial class MultiSelectListPickerViewModel : ObservableObject
 {
     private readonly List<object> _discoveredItems = [];
-    private readonly List<object> _runtimeItems = [];
     private readonly HashSet<string> _selectedKeys = [];
     private readonly ObservableCollection<WrappedListItem> _allWrapped = [];
-    private readonly Dictionary<string, RuntimeItemOptions> _runtimeOptions = [];
-    private IList _rawItems = new List<object>();
-    private INotifyCollectionChanged? _rawCollectionNotifier;
 
     public MultiSelectListPickerViewModel()
     {
@@ -54,24 +49,6 @@ public sealed partial class MultiSelectListPickerViewModel : ObservableObject
 
     public event Action? SelectionChanged;
 
-    public IList RawItems
-    {
-        get => _rawItems;
-        set
-        {
-            if (_rawCollectionNotifier is not null)
-                _rawCollectionNotifier.CollectionChanged -= OnRawCollectionChanged;
-
-            _rawItems = value ?? new List<object>();
-
-            _rawCollectionNotifier = _rawItems as INotifyCollectionChanged;
-            if (_rawCollectionNotifier is not null)
-                _rawCollectionNotifier.CollectionChanged += OnRawCollectionChanged;
-
-            SetDiscovered(_rawItems);
-        }
-    }
-
     public void SetDiscovered(IEnumerable items)
     {
         _discoveredItems.Clear();
@@ -92,47 +69,6 @@ public sealed partial class MultiSelectListPickerViewModel : ObservableObject
             ItemKeySelector = item => item is AvailableArtifactItem a ? a.Name : item?.ToString() ?? string.Empty;
 
         SetDiscovered((IEnumerable)items);
-    }
-
-    public void AddRuntime(object item, bool isSelected = false, bool canEdit = true, bool canRemove = true, Action<object>? onEdit = null, Action<object>? onRemove = null)
-    {
-        var key = GetItemKey(item);
-        if (_discoveredItems.Any(d => string.Equals(GetItemKey(d), key, StringComparison.Ordinal)))
-            return;
-
-        var existing = _runtimeItems.FirstOrDefault(r => string.Equals(GetItemKey(r), key, StringComparison.Ordinal));
-        if (existing is not null)
-        {
-            _runtimeItems.Remove(existing);
-            _runtimeOptions.Remove(key);
-            _selectedKeys.Remove(key);
-        }
-
-        _runtimeItems.Add(item);
-        _runtimeOptions[key] = new RuntimeItemOptions(canEdit, canRemove, onEdit, onRemove);
-        if (isSelected)
-        {
-            _selectedKeys.Add(key);
-        }
-
-        RebuildWrappedItems();
-        SelectionChanged?.Invoke();
-    }
-
-    public void RemoveRuntime(object item)
-    {
-        var key = GetItemKey(item);
-        var existing = _runtimeItems.FirstOrDefault(runtime => string.Equals(GetItemKey(runtime), key, StringComparison.Ordinal));
-        if (existing is null)
-        {
-            return;
-        }
-
-        _runtimeItems.Remove(existing);
-        _runtimeOptions.Remove(key);
-        _selectedKeys.Remove(key);
-        RebuildWrappedItems();
-        SelectionChanged?.Invoke();
     }
 
     [RelayCommand]
@@ -174,58 +110,25 @@ public sealed partial class MultiSelectListPickerViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void AddRuntimeItem()
+    private void RequestAddItem()
     {
         AddItemCommand?.Execute(null);
     }
 
     [RelayCommand]
-    private void RemoveRuntimeItem(object? originalItem)
+    private void RequestRemoveItem(object? originalItem)
     {
         if (originalItem is null) return;
 
-        var key = GetItemKey(originalItem);
-        if (_runtimeOptions.TryGetValue(key, out var options))
-        {
-            options.RemoveRequested?.Invoke(originalItem);
-        }
-        else
-        {
-            RemoveItemRequested?.Invoke(originalItem);
-        }
-
-        RemoveRuntime(originalItem);
+        RemoveItemRequested?.Invoke(originalItem);
     }
 
     [RelayCommand]
-    private void EditRuntimeItem(object? originalItem)
+    private void RequestEditItem(object? originalItem)
     {
         if (originalItem is null) return;
 
-        var key = GetItemKey(originalItem);
-        if (_runtimeOptions.TryGetValue(key, out var options) && options.CanEdit)
-        {
-            options.EditRequested?.Invoke(originalItem);
-            return;
-        }
-
         EditItemRequested?.Invoke(originalItem);
-    }
-
-    public void ClearRuntime()
-    {
-        if (_runtimeItems.Count == 0)
-            return;
-
-        foreach (var item in _runtimeItems)
-        {
-            _selectedKeys.Remove(GetItemKey(item));
-        }
-
-        _runtimeItems.Clear();
-        _runtimeOptions.Clear();
-        RebuildWrappedItems();
-        SelectionChanged?.Invoke();
     }
 
     public void SelectNext()
@@ -272,26 +175,8 @@ public sealed partial class MultiSelectListPickerViewModel : ObservableObject
             _allWrapped.Add(new WrappedListItem(item, name, false, name)
             {
                 IsSelected = _selectedKeys.Contains(GetItemKey(item)),
-                IsRuntime = false,
                 CanEdit = ItemCanEditSelector?.Invoke(item) ?? false,
                 CanRemove = ItemCanRemoveSelector?.Invoke(item) ?? false,
-            });
-        }
-
-        foreach (var item in _runtimeItems)
-        {
-            var name = ItemNameSelector?.Invoke(item) ?? item?.ToString() ?? "";
-            if (ShouldFilter(name, search))
-                continue;
-
-            var key = GetItemKey(item);
-            var options = _runtimeOptions.GetValueOrDefault(key) ?? new RuntimeItemOptions(false, false);
-            _allWrapped.Add(new WrappedListItem(item, name, false, name)
-            {
-                IsSelected = _selectedKeys.Contains(key),
-                IsRuntime = true,
-                CanEdit = options.CanEdit,
-                CanRemove = options.CanRemove,
             });
         }
 
@@ -302,11 +187,6 @@ public sealed partial class MultiSelectListPickerViewModel : ObservableObject
     {
         return !string.IsNullOrWhiteSpace(search) &&
                !name.Contains(search, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private void OnRawCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
-    {
-        SetDiscovered(_rawItems);
     }
 
     private string GetItemKey(object? item)
@@ -320,11 +200,8 @@ public sealed partial class MultiSelectListPickerViewModel : ObservableObject
     private void PruneSelections()
     {
         var knownKeys = _discoveredItems.Select(GetItemKey)
-            .Concat(_runtimeItems.Select(GetItemKey))
             .ToHashSet(StringComparer.Ordinal);
 
         _selectedKeys.RemoveWhere(key => !knownKeys.Contains(key));
     }
-
-    private sealed record RuntimeItemOptions(bool CanEdit, bool CanRemove, Action<object>? EditRequested = null, Action<object>? RemoveRequested = null);
 }

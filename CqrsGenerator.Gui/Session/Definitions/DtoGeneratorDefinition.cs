@@ -25,11 +25,9 @@ public sealed class DtoGeneratorDefinition : GeneratorDefinition<DtoGeneratorSta
         GeneratorSessionServices services)
     {
         var planService = services.ServiceProvider.GetRequiredService<IAddDtoPlanService>();
-        var scenarioOutlineBuilder = services.ServiceProvider.GetRequiredService<IAddDtoScenarioOutlineBuilder>();
         var vm = new DtoRootSessionViewModel(
             actionDescriptor: null,
             planService,
-            scenarioOutlineBuilder,
             isStandalone: false,
             node: node);
         vm.SetGenerationSession(session);
@@ -71,7 +69,7 @@ public sealed class DtoGeneratorDefinition : GeneratorDefinition<DtoGeneratorSta
             state.Properties
                 .Select(p => new PropertySpec(p.Type, p.Name))
                 .ToArray(),
-            state.UpdateWebImports,
+            state.WebFeatureRef?.FeaturePath,
             state.Subfolder);
 
         return planService.BuildPlan(core.WorkspaceContext, formState);

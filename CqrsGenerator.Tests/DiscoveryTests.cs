@@ -427,6 +427,48 @@ public class DiscoveryTests
     }
 
     [Fact]
+    public void Discover_RepositoryAndEntity_ExposeHandlerContracts()
+    {
+        using var p = new TempProject();
+        p.AddDir("Application/Common/Interfaces/Repositories");
+        p.AddFile("Application/Common/Interfaces/Repositories/IUserRepository.cs", """
+using System.Threading;
+using System.Threading.Tasks;
+namespace Application.Common.Interfaces.Repositories
+{
+    public interface IUserRepository
+    {
+        Task<User> GetByIdAsync(int id, CancellationToken ct = default);
+        Task AddAsync(User entity, CancellationToken ct = default);
+        Task DeleteAsync(int id, CancellationToken ct = default);
+    }
+}
+""");
+        p.AddDir("Domain/Entities");
+        p.AddFile("Domain/Entities/User.cs", """
+namespace Domain.Entities
+{
+    public class User
+    {
+        public static User Create(string name) => new();
+        public void Update(string name) { }
+        private void Hidden() { }
+    }
+}
+""");
+
+        var model = p.CreateDiscovery().Discover();
+
+        var repository = Assert.Single(model.Repositories);
+        Assert.Equal("User", repository.EntityName);
+        Assert.Equal(["GetByIdAsync", "AddAsync", "DeleteAsync"], repository.Methods.Select(method => method.Name));
+
+        var entity = Assert.Single(model.Entities);
+        Assert.Equal(["Create", "Update"], entity.Methods.Select(method => method.Name));
+        Assert.True(entity.Methods.Single(method => method.Name == "Create").IsStatic);
+    }
+
+    [Fact]
     public void Discover_NoRepositoriesDir_EmptyList()
     {
         using var p = new TempProject();

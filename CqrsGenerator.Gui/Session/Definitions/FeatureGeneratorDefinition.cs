@@ -25,11 +25,9 @@ public sealed class FeatureGeneratorDefinition : GeneratorDefinition<FeatureGene
         GeneratorSessionServices services)
     {
         var planService = services.ServiceProvider.GetRequiredService<ICreateFeaturePlanService>();
-        var scenarioOutlineBuilder = services.ServiceProvider.GetRequiredService<ICreateFeatureScenarioOutlineBuilder>();
         return new CreateFeatureRootSessionViewModel(
             actionDescriptor: null,
             planService,
-            scenarioOutlineBuilder,
             isStandalone: false,
             node: node);
     }

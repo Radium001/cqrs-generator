@@ -1,6 +1,5 @@
 using System.Collections;
 using System.Collections.ObjectModel;
-using System.Collections.Specialized;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using CqrsGenerator.Gui.Session;
@@ -11,7 +10,6 @@ public partial class WrappedListPickerViewModel : ObservableObject
 {
     private IList _rawItems = new List<object>();
     private readonly ObservableCollection<WrappedListItem> _allWrapped = [];
-    private INotifyCollectionChanged? _rawCollectionNotifier;
 
     [ObservableProperty]
     private string _searchText = "";
@@ -88,35 +86,11 @@ public partial class WrappedListPickerViewModel : ObservableObject
         }
     }
 
-    // Kept for backward compat when consumer sets RawItems directly
-    public IList RawItems
-    {
-        get => _rawItems;
-        set
-        {
-            if (_rawCollectionNotifier is not null)
-                _rawCollectionNotifier.CollectionChanged -= OnRawCollectionChanged;
-
-            _rawItems = value ?? new List<object>();
-
-            _rawCollectionNotifier = _rawItems as INotifyCollectionChanged;
-            if (_rawCollectionNotifier is not null)
-                _rawCollectionNotifier.CollectionChanged += OnRawCollectionChanged;
-
-            RebuildWrappedItems();
-        }
-    }
-
     public void SetDiscovered(IEnumerable<AvailableArtifactItem> items)
     {
         Items = items.ToList();
         if (ItemNameSelector is null)
             ItemNameSelector = item => item is AvailableArtifactItem a ? a.Name : item?.ToString() ?? string.Empty;
-    }
-
-    private void OnRawCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
-    {
-        RebuildWrappedItems();
     }
 
     public string SearchWatermark => SelectedItem?.IsCustom == true ? CustomEntryWatermark : "Search...";

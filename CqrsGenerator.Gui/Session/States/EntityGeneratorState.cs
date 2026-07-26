@@ -25,7 +25,5 @@ public sealed class EntityGeneratorState
 
     public bool GenerateEfMapping { get; set; }
 
-    public bool GenerateInterface { get; set; }
-
     public ObservableCollection<string> DomainMethods { get; } = new();
 }

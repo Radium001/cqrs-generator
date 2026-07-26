@@ -49,14 +49,6 @@ public sealed class AddRepositoryRequestBuilder : IAddRepositoryRequestBuilder
                     method.Parameters.Select(parameter => new PropertySpec(parameter.Type.Trim(), parameter.Name.Trim())).ToArray()));
             }
 
-            if (customEntity is not null)
-            {
-                foreach (var property in Enumerable.Empty<PropertySpec>())
-                {
-                    CSharpNameValidator.EnsureIdentifier(property.Name.Trim(), nameof(property.Name));
-                }
-            }
-
             return AddRepositoryRequestBuildResult.Success(
                 new AddRepositoryScenarioWorkflowRequest(
                     entityName.Trim(),
@@ -64,7 +56,6 @@ public sealed class AddRepositoryRequestBuilder : IAddRepositoryRequestBuilder
                     CreateEntity: false,
                     null,
                     [],
-                    false,
                     false,
                     false,
                     [],

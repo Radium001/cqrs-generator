@@ -61,12 +61,6 @@ public sealed class GenerationSessionRelationIndex
                     yield return new ArtifactReferenceEdge(node.Id, "Repository", reference, IsOwned(node, reference, "Repository"));
                 break;
 
-            case WebPageGeneratorState state:
-                if (state.FeatureRef is not null)
-                    yield return new ArtifactReferenceEdge(node.Id, "Feature", state.FeatureRef, IsOwned(node, state.FeatureRef, "Feature"));
-                foreach (var reference in state.QueryRefs)
-                    yield return new ArtifactReferenceEdge(node.Id, "Query", reference, IsOwned(node, reference, "Query"));
-                break;
         }
     }
 

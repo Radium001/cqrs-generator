@@ -43,6 +43,18 @@ public partial class CyclicInputViewModel : ObservableObject
 
     public string FullText => CurrentPrefix + Text + CurrentSuffix;
 
+    public void SetFullText(string value)
+    {
+        value ??= "";
+
+        var selectedIndex = FindDecorationIndex(value);
+        SelectedIndex = selectedIndex;
+
+        var prefixLength = CurrentPrefix.Length;
+        var suffixLength = CurrentSuffix.Length;
+        Text = value.Substring(prefixLength, value.Length - prefixLength - suffixLength);
+    }
+
     partial void OnSelectedIndexChanged(int value)
     {
         OnPropertyChanged(nameof(CurrentPrefix));
@@ -91,5 +103,60 @@ public partial class CyclicInputViewModel : ObservableObject
         var prefixCount = Prefixes?.Count ?? 0;
         var suffixCount = Suffixes?.Count ?? 0;
         return Math.Max(prefixCount, suffixCount);
+    }
+
+    private int FindDecorationIndex(string value)
+    {
+        var fallbackIndex = 0;
+        var bestIndex = -1;
+        var bestDecorationLength = -1;
+
+        for (var index = 0; index < MaxIndex(); index++)
+        {
+            var prefix = GetValue(Prefixes, index);
+            var suffix = GetValue(Suffixes, index);
+            if (prefix.Length == 0 && suffix.Length == 0)
+            {
+                fallbackIndex = index;
+                continue;
+            }
+
+            if (!value.StartsWith(prefix, StringComparison.Ordinal) ||
+                !value.EndsWith(suffix, StringComparison.Ordinal) ||
+                value.Length < prefix.Length + suffix.Length ||
+                !HasNameBoundaryAfterPrefix(value, prefix))
+            {
+                continue;
+            }
+
+            var decorationLength = prefix.Length + suffix.Length;
+            if (decorationLength > bestDecorationLength)
+            {
+                bestIndex = index;
+                bestDecorationLength = decorationLength;
+            }
+        }
+
+        return bestIndex >= 0 ? bestIndex : fallbackIndex;
+    }
+
+    private static string GetValue(IReadOnlyList<string>? values, int index)
+        => values is not null && index >= 0 && index < values.Count ? values[index] : "";
+
+    private static bool HasNameBoundaryAfterPrefix(string value, string prefix)
+    {
+        if (prefix.Length == 0 || value.Length == prefix.Length)
+        {
+            return true;
+        }
+
+        var lastPrefixCharacter = prefix[^1];
+        if (!char.IsLetterOrDigit(lastPrefixCharacter))
+        {
+            return true;
+        }
+
+        var nextCharacter = value[prefix.Length];
+        return char.IsUpper(nextCharacter) || char.IsDigit(nextCharacter) || nextCharacter == '_';
     }
 }

@@ -22,7 +22,9 @@ public sealed class TemplateProvider
             return File.ReadAllText(path);
         }
 
-        return TemplateCatalog.GetBuiltIn(name);
+        throw new FileNotFoundException(
+            $"Template asset '{name}' was not found. Expected path: '{path}'.",
+            path);
     }
 
     private static string NormalizeTemplatePath(string name) =>

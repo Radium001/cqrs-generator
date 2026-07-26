@@ -23,7 +23,6 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
 
     private readonly IAddQueryPlanService _planService;
     private readonly IQueryServiceSuggestionService? _queryServiceSuggestionService;
-    private readonly IAddQueryScenarioOutlineBuilder _scenarioOutlineBuilder;
     private readonly bool _isStandalone;
     private readonly string? _fixedFeaturePath;
     private static readonly IReadOnlyList<string> MethodNameSuffixes = ["", GeneratorConstants.AsyncSuffix];
@@ -45,18 +44,12 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
     public AddQueryRootSessionViewModel(
         GenerationActionDescriptor? actionDescriptor,
         IAddQueryPlanService planService,
-        IAddDtoPlanService? addDtoPlanService,
-        IAddDtoScenarioOutlineBuilder? addDtoScenarioOutlineBuilder,
         IQueryServiceSuggestionService? queryServiceSuggestionService,
-        IAddQueryScenarioOutlineBuilder scenarioOutlineBuilder,
         string? fixedFeaturePath = null,
-        ICreateFeaturePlanService? createFeaturePlanService = null,
-        ICreateFeatureScenarioOutlineBuilder? createFeatureScenarioOutlineBuilder = null,
         GeneratorNode? node = null)
     {
         _planService = planService;
         _queryServiceSuggestionService = queryServiceSuggestionService;
-        _scenarioOutlineBuilder = scenarioOutlineBuilder;
         _isStandalone = actionDescriptor is not null;
         _fixedFeaturePath = fixedFeaturePath;
         _node = node;
@@ -75,6 +68,16 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
             ItemKeySelector = item => item is FeatureItemViewModel f && f.Ref is not null ? ArtifactKey.From(f.Ref).Value : item?.ToString() ?? string.Empty,
         };
         FeaturePicker.PropertyChanged += OnFeaturePickerChanged;
+        WebImportsTarget = new WebImportsTargetPickerViewModel();
+        WebImportsTarget.SelectionChanged += () =>
+        {
+            if (_sessionState is not null)
+            {
+                _sessionState.HasWebFeatureSelection = true;
+            }
+            SyncToSessionState();
+            OnPropertyChanged(nameof(HasUnsavedChanges));
+        };
 
         ResultTypePicker = new WrappedListPickerViewModel
         {
@@ -99,7 +102,7 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
 
         QueryNameCyclic = new CyclicInputViewModel
         {
-            Prefixes = ["", GeneratorConstants.QueryVerbPrefixes[0]],
+            Prefixes = ["", .. GeneratorConstants.QueryVerbPrefixes],
             Suffixes = [""],
             SelectedIndex = 1,
         };
@@ -137,7 +140,8 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
 
         if (_sessionState is not null)
         {
-            QueryNameCyclic.Text = _sessionState.QueryName;
+            QueryNameCyclic.SetFullText(_sessionState.QueryName);
+            QueryName = QueryNameCyclic.FullText;
             foreach (var param in _sessionState.Parameters)
             {
                 var parameter = new PropertyEntryViewModel(param.Type, param.Name);
@@ -170,6 +174,8 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
 
     public WrappedListPickerViewModel FeaturePicker { get; }
 
+    public WebImportsTargetPickerViewModel WebImportsTarget { get; }
+
     public WrappedListPickerViewModel ResultTypePicker { get; }
 
     public CyclicInputViewModel QueryNameCyclic { get; }
@@ -199,7 +205,7 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
         !CreateQueryServiceMethod ||
         !GenerateHandlerBody ||
         !GenerateQueryServiceBody ||
-        !UpdateWebImports;
+        WebImportsTarget.SelectedRef is not null;
 
     public bool CanClose => true;
 
@@ -290,9 +296,6 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
     private bool _generateQueryServiceBody = true;
 
     [ObservableProperty]
-    private bool _updateWebImports = true;
-
-    [ObservableProperty]
     private string _statusText = "Configure Add Query.";
 
     public void UpdateWorkspace(ProjectWorkspaceContext? workspaceContext)
@@ -320,6 +323,8 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
             return;
         }
 
+        WebImportsTarget.SelectDefaultForFeature(value?.RelativePath);
+
         if (value is not null && Node is not null)
         {
             foreach (var child in Node.Children)
@@ -344,7 +349,7 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
         if (_projectModel is null || value is null)
         {
             ResultTypeItems.Clear();
-            ResultTypePicker.RawItems = ResultTypeItems;
+            ResultTypePicker.Items = ResultTypeItems;
             SetQueryServiceSuggestion(null);
             OnPropertyChanged(nameof(SelectedDtoChoice));
             OnPropertyChanged(nameof(CanEditSelectedDto));
@@ -367,16 +372,17 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
             return;
         }
 
-        SyncToSessionState();
         OnPropertyChanged(nameof(CanBuildPlan));
         OnPropertyChanged(nameof(HasUnsavedChanges));
 
         if (!_isSyncingQueryName)
         {
             _isSyncingQueryName = true;
-            QueryNameCyclic.Text = value;
+            QueryNameCyclic.SetFullText(value);
             _isSyncingQueryName = false;
         }
+
+        SyncToSessionState();
 
         if (_methodNameAutoDerived)
         {
@@ -424,6 +430,7 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
         if (project is null)
         {
             SelectedFeature = null;
+            WebImportsTarget.Clear();
             StatusText = "Open a project first.";
             return;
         }
@@ -485,6 +492,12 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
         {
             _isReloadingProject = false;
         }
+
+        WebImportsTarget.Reload(
+            project,
+            SelectedFeature?.RelativePath,
+            _sessionState?.WebFeatureRef,
+            _sessionState?.HasWebFeatureSelection == true);
 
         if (_projectModel is not null && SelectedFeature is not null)
         {
@@ -576,12 +589,6 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
         OnPropertyChanged(nameof(HasUnsavedChanges));
     }
 
-    partial void OnUpdateWebImportsChanged(bool value)
-    {
-        SyncToSessionState();
-        OnPropertyChanged(nameof(HasUnsavedChanges));
-    }
-
     private void OnResultTypePickerChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (_isSyncingResultTypeSelection)
@@ -638,7 +645,7 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
         if (_projectModel is null || SelectedFeature is null)
         {
             ResultTypeItems.Clear();
-            ResultTypePicker.RawItems = ResultTypeItems;
+            ResultTypePicker.Items = ResultTypeItems;
             return;
         }
 
@@ -656,7 +663,7 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
                 ResultTypeItems.Add(dto);
             }
 
-            ResultTypePicker.RawItems = ResultTypeItems;
+            ResultTypePicker.Items = ResultTypeItems;
             if (selectedDtoRef is not null && !SelectDto(selectedDtoRef))
             {
                 ResultTypePicker.SelectRawItem(null);
@@ -797,7 +804,7 @@ public sealed partial class AddQueryRootSessionViewModel : ObservableObject,
         _sessionState.MethodName = GetMethodName();
         _sessionState.GenerateHandlerBody = GenerateHandlerBody;
         _sessionState.GenerateQueryServiceBody = GenerateQueryServiceBody;
-        _sessionState.UpdateWebImports = UpdateWebImports;
+        _sessionState.WebFeatureRef = WebImportsTarget.SelectedRef;
         _sessionState.ResponseShape = GetShapeFromPrefixIndex(ResultTypePicker.SelectedPrefixIndex);
         _sessionState.Parameters.Clear();
         foreach (var p in Parameters.Where(p => !string.IsNullOrWhiteSpace(p.Type) && !string.IsNullOrWhiteSpace(p.Name)))

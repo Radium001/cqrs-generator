@@ -18,6 +18,8 @@ public sealed class QueryServiceGenerationRequest
 
     public string? DtoTypeName { get; init; }
 
+    public string DtoNamespace { get; init; } = string.Empty;
+
     public string? InitialReturnType { get; init; }
 
     public string? InitialMethodName { get; init; }
@@ -42,6 +44,8 @@ public sealed class QueryServiceMethodGenerationRequest
     public bool GenerateImplementationBody { get; init; }
 
     public string? DtoTypeName { get; init; }
+
+    public string DtoNamespace { get; init; } = string.Empty;
 
     public IReadOnlyList<PropertySpec> Parameters { get; init; } = [];
 }

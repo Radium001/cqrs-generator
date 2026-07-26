@@ -148,10 +148,6 @@ public sealed class GenerationSessionNavigator : IGenerationSessionNavigator
                 state.RepositoryRefs.Clear();
                 state.StandardDependencyNames.Clear();
                 break;
-            case WebPageGeneratorState state:
-                state.FeatureRef = null;
-                state.QueryRefs.Clear();
-                break;
         }
     }
 
@@ -179,12 +175,6 @@ public sealed class GenerationSessionNavigator : IGenerationSessionNavigator
                 break;
             case CommandGeneratorState state when relationship == "Repository":
                 RemoveMatching(state.RepositoryRefs, targetNodeId);
-                break;
-            case WebPageGeneratorState state when relationship == "Feature" && state.FeatureRef?.NodeId == targetNodeId:
-                state.FeatureRef = null;
-                break;
-            case WebPageGeneratorState state when relationship == "Query":
-                RemoveMatching(state.QueryRefs, targetNodeId);
                 break;
         }
     }

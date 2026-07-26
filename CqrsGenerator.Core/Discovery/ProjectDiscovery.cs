@@ -246,7 +246,15 @@ public sealed class ProjectDiscovery(GeneratorConfig config)
             "Repositories");
 
         return GetMatchingTypes(repositoryInterfaceRoot, RepositoryInterfaceRegex)
-            .Select(type => new RepositoryInfo(type.Name, type.Path))
+            .Select(type =>
+            {
+                var methods = CSharpContractParser.ParseInterfaceMethods(type.Path, type.Name);
+                return new RepositoryInfo(type.Name, type.Path)
+                {
+                    EntityName = CSharpContractParser.InferRepositoryEntityName(methods),
+                    Methods = methods,
+                };
+            })
             .OrderBy(repository => repository.InterfaceName, StringComparer.OrdinalIgnoreCase)
             .ToArray();
     }
@@ -267,7 +275,10 @@ public sealed class ProjectDiscovery(GeneratorConfig config)
             if (match.Success)
             {
                 var name = match.Groups[1].Value;
-                results.Add(new EntityInfo(name, file, name, GetNamespace(file), null));
+                results.Add(new EntityInfo(name, file, name, GetNamespace(file), null)
+                {
+                    Methods = CSharpContractParser.ParsePublicClassMethods(file, name),
+                });
             }
         }
 
@@ -286,7 +297,10 @@ public sealed class ProjectDiscovery(GeneratorConfig config)
                     var name = match.Groups[1].Value;
                     var relativePath = NormalizeRelativePath(Path.GetRelativePath(entityRoot, Path.GetDirectoryName(file) ?? entityRoot));
                     var displayName = relativePath == "." ? name : $"{relativePath}/{name}";
-                    results.Add(new EntityInfo(name, file, displayName, GetNamespace(file), relativePath == "." ? null : relativePath));
+                    results.Add(new EntityInfo(name, file, displayName, GetNamespace(file), relativePath == "." ? null : relativePath)
+                    {
+                        Methods = CSharpContractParser.ParsePublicClassMethods(file, name),
+                    });
                 }
             }
         }

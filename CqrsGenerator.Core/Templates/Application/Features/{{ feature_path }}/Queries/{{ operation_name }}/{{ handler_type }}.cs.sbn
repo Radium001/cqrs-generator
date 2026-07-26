@@ -17,7 +17,7 @@ namespace {{ namespace }}
             {{ service_field }} = {{ service_parameter }};
         }
 
-{{ end }}        public async Task<{{ response_type }}> Handle({{ query_type }} request, CancellationToken cancellationToken)
+{{ end }}        public {{ if is_async }}async {{ end }}Task<{{ response_type }}> Handle({{ query_type }} request, CancellationToken cancellationToken)
         {
             {{ handler_body }}
         }

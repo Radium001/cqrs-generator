@@ -57,7 +57,6 @@ public sealed class ScenarioNodeViewModel
         GeneratorNodeKind.Command => "Command",
         GeneratorNodeKind.Repository => "Repository",
         GeneratorNodeKind.Entity => "Entity",
-        GeneratorNodeKind.WebPage => "Web Page",
         _ => kind.ToString(),
     };
 }

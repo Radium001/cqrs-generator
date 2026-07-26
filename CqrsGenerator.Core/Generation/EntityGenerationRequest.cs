@@ -14,8 +14,6 @@ public sealed class EntityGenerationRequest
 
     public IReadOnlyList<string> DomainMethods { get; init; } = [];
 
-    public bool GenerateInterface { get; init; }
-
     public bool GenerateEfMapping { get; init; }
 
     public IReadOnlyList<(string DomainName, string EfName)>? EfMappingFields { get; init; }

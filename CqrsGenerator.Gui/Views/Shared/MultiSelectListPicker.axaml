@@ -45,7 +45,7 @@
                        TextTrimming="CharacterEllipsis" />
 
             <Button Grid.Column="2"
-                    Command="{Binding $parent[ListBox].((vm:MultiSelectListPickerViewModel)DataContext).EditRuntimeItemCommand}"
+                    Command="{Binding $parent[ListBox].((vm:MultiSelectListPickerViewModel)DataContext).RequestEditItemCommand}"
                     CommandParameter="{Binding OriginalItem}"
                     IsVisible="{Binding CanEdit}"
                     Width="28"
@@ -59,7 +59,7 @@
             </Button>
 
             <Button Grid.Column="3"
-                    Command="{Binding $parent[ListBox].((vm:MultiSelectListPickerViewModel)DataContext).RemoveRuntimeItemCommand}"
+                    Command="{Binding $parent[ListBox].((vm:MultiSelectListPickerViewModel)DataContext).RequestRemoveItemCommand}"
                     CommandParameter="{Binding OriginalItem}"
                     IsVisible="{Binding CanRemove}"
                     Width="28"
@@ -76,7 +76,7 @@
       </ListBox.ItemTemplate>
     </ListBox>
 
-    <Button Command="{Binding AddRuntimeItemCommand}"
+    <Button Command="{Binding RequestAddItemCommand}"
             IsVisible="{Binding HasAddItem}"
             HorizontalAlignment="Left">
       + Add dependency

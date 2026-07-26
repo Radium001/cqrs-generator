@@ -56,19 +56,3 @@ public sealed class AddEntityWorkflow
     public GenerationPlan CreatePlan(EntityGenerationRequest request) =>
         _context.CreateEntityGenerator().CreatePlan(request);
 }
-
-public sealed class AddWebPageWorkflow
-{
-    private readonly CoreWorkflowContext _context;
-
-    internal AddWebPageWorkflow(CoreWorkflowContext context)
-    {
-        _context = context;
-    }
-
-    public GenerationPlan CreatePlan(WebPageGenerationRequest request) =>
-        _context.CreateWebPageGenerator().CreatePlan(request);
-
-    public void ApplyToPlan(GenerationPlan plan, WebPageGenerationRequest request) =>
-        _context.CreateWebPageGenerator().ApplyToPlan(plan, request);
-}

@@ -1,6 +1,8 @@
 using {{ entity_namespace }};
 using System.Threading;
 using System.Threading.Tasks;
+{{ if usings_block != "" }}{{ usings_block }}
+{{ end }}
 
 namespace {{ namespace }}
 {

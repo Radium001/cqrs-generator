@@ -31,21 +31,11 @@ public sealed class QueryGeneratorDefinition : GeneratorDefinition<QueryGenerato
         GeneratorSessionServices services)
     {
         var planService = services.ServiceProvider.GetRequiredService<IAddQueryPlanService>();
-        var addDtoPlanService = services.ServiceProvider.GetRequiredService<IAddDtoPlanService>();
-        var addDtoScenarioOutlineBuilder = services.ServiceProvider.GetRequiredService<IAddDtoScenarioOutlineBuilder>();
         var queryServiceSuggestionService = services.ServiceProvider.GetRequiredService<IQueryServiceSuggestionService>();
-        var scenarioOutlineBuilder = services.ServiceProvider.GetRequiredService<IAddQueryScenarioOutlineBuilder>();
-        var createFeaturePlanService = services.ServiceProvider.GetRequiredService<ICreateFeaturePlanService>();
-        var createFeatureScenarioOutlineBuilder = services.ServiceProvider.GetRequiredService<ICreateFeatureScenarioOutlineBuilder>();
         var vm = new AddQueryRootSessionViewModel(
             actionDescriptor: null,
             planService,
-            addDtoPlanService,
-            addDtoScenarioOutlineBuilder,
             queryServiceSuggestionService,
-            scenarioOutlineBuilder,
-            createFeaturePlanService: createFeaturePlanService,
-            createFeatureScenarioOutlineBuilder: createFeatureScenarioOutlineBuilder,
             node: node);
         vm.SetGenerationSession(session, services.Navigator);
         return vm;
@@ -127,7 +117,7 @@ public sealed class QueryGeneratorDefinition : GeneratorDefinition<QueryGenerato
             state.MethodName,
             state.GenerateHandlerBody,
             state.GenerateQueryServiceBody,
-            state.UpdateWebImports);
+            state.WebFeatureRef?.FeaturePath);
 
         return planService.BuildPlan(core.WorkspaceContext, formState);
     }

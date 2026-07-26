@@ -27,21 +27,9 @@ public sealed class CommandGeneratorDefinition : GeneratorDefinition<CommandGene
         GeneratorSessionServices services)
     {
         var planService = services.ServiceProvider.GetRequiredService<IAddCommandPlanService>();
-        var scenarioOutlineBuilder = services.ServiceProvider.GetRequiredService<IAddCommandScenarioOutlineBuilder>();
-        var repositoryPlanService = services.ServiceProvider.GetRequiredService<IAddRepositoryPlanService>();
-        var repositoryScenarioOutlineBuilder = services.ServiceProvider.GetRequiredService<IAddRepositoryScenarioOutlineBuilder>();
-        var entityPlanService = services.ServiceProvider.GetRequiredService<IAddEntityPlanService>();
-        var entityScenarioOutlineBuilder = services.ServiceProvider.GetRequiredService<IAddEntityScenarioOutlineBuilder>();
-        var efPreparationService = services.ServiceProvider.GetRequiredService<EfEntityPreparationService>();
         var vm = new CommandRootSessionViewModel(
             new GenerationActionDescriptor("add-command", "Add Command", "Application", "Ready", true),
             planService,
-            scenarioOutlineBuilder,
-            repositoryPlanService,
-            repositoryScenarioOutlineBuilder,
-            entityPlanService,
-            entityScenarioOutlineBuilder,
-            efPreparationService,
             node: node);
         vm.SetGenerationSession(session, services.Navigator);
         return vm;
@@ -97,14 +85,146 @@ public sealed class CommandGeneratorDefinition : GeneratorDefinition<CommandGene
             state.FeatureRef?.DisplayName ?? state.FeatureRef?.Name,
             state.FeatureRef?.FeaturePath,
             state.CommandName,
-            state.ResponseType,
             state.Parameters
                 .Select(p => new PropertySpec(p.Type, p.Name))
                 .ToArray(),
             dependencies,
-            Array.Empty<object>(),
-            state.UpdateWebImports);
+            state.WebFeatureRef?.FeaturePath)
+        {
+            GenerateHandlerBody = state.GenerateHandlerBody,
+            HandlerScaffoldContext = BuildScaffoldContext(state, session, core.WorkspaceContext.ProjectModel),
+        };
 
         return planService.BuildPlan(core.WorkspaceContext, formState);
+    }
+
+    private static CommandHandlerScaffoldContext BuildScaffoldContext(
+        CommandGeneratorState command,
+        GenerationSession session,
+        ProjectModel project)
+    {
+        var repositories = command.RepositoryRefs
+            .Select(reference => ResolveRepository(reference, session, project))
+            .Where(contract => contract is not null)
+            .Select(contract => contract!)
+            .ToArray();
+        return new CommandHandlerScaffoldContext(repositories);
+    }
+
+    private static CommandHandlerRepositoryContract? ResolveRepository(
+        ArtifactRef reference,
+        GenerationSession session,
+        ProjectModel project)
+    {
+        if (reference.IsFromProject)
+        {
+            var repository = project.Repositories.FirstOrDefault(candidate =>
+                string.Equals(candidate.InterfaceName, reference.Name, StringComparison.OrdinalIgnoreCase) ||
+                (!string.IsNullOrWhiteSpace(reference.ProjectPath) &&
+                 string.Equals(candidate.Path, reference.ProjectPath, StringComparison.OrdinalIgnoreCase)));
+            if (repository is null)
+            {
+                return null;
+            }
+
+            return new CommandHandlerRepositoryContract(
+                repository.InterfaceName,
+                GenerationNaming.ToDependencyName(repository.InterfaceName),
+                repository.EntityName,
+                repository.Methods,
+                ResolveProjectEntity(repository.EntityName, project));
+        }
+
+        if (reference.NodeId is not Guid nodeId ||
+            session.FindNode(nodeId)?.State is not RepositoryGeneratorState repositoryState)
+        {
+            return null;
+        }
+
+        var entityName = repositoryState.EntityRef?.Name;
+        var selectedPresetKeys = repositoryState.SelectedMethodPresetKeys.Count == 0
+            ? RepositoryMethodCatalog.Presets
+                .Where(preset => preset.IsSelectedByDefault)
+                .Select(preset => preset.Key)
+            : repositoryState.SelectedMethodPresetKeys;
+        var methods = selectedPresetKeys
+            .Select(key => RepositoryMethodCatalog.Create(key, entityName ?? "Entity"))
+            .Concat(repositoryState.CustomMethods)
+            .Select(ToHandlerMethodContract)
+            .ToArray();
+
+        return new CommandHandlerRepositoryContract(
+            repositoryState.InterfaceName,
+            GenerationNaming.ToDependencyName(repositoryState.InterfaceName),
+            entityName,
+            methods,
+            ResolveEntity(repositoryState.EntityRef, session, project));
+    }
+
+    private static CommandHandlerMethodContract ToHandlerMethodContract(RepositoryMethodSpec method)
+    {
+        var parameters = method.Parameters.Any(parameter =>
+                string.Equals(parameter.Type, GeneratorConstants.CancellationTokenType, StringComparison.Ordinal))
+            ? method.Parameters
+            : method.Parameters
+                .Append(new PropertySpec(
+                    GeneratorConstants.CancellationTokenType,
+                    GeneratorConstants.CancellationTokenParamName))
+                .ToArray();
+        return new CommandHandlerMethodContract(method.Name, method.ReturnType, parameters);
+    }
+
+    private static CommandHandlerEntityContract? ResolveEntity(
+        ArtifactRef? reference,
+        GenerationSession session,
+        ProjectModel project)
+    {
+        if (reference is null)
+        {
+            return null;
+        }
+
+        if (reference.IsFromProject)
+        {
+            return ResolveProjectEntity(reference.Name, project);
+        }
+
+        if (reference.NodeId is not Guid nodeId ||
+            session.FindNode(nodeId)?.State is not EntityGeneratorState entityState)
+        {
+            return null;
+        }
+
+        var methods = new List<CommandHandlerMethodContract>();
+        if (entityState.GenerateFactoryMethod)
+        {
+            methods.Add(new CommandHandlerMethodContract(
+                "Create",
+                entityState.EntityName,
+                entityState.Properties.ToArray(),
+                IsStatic: true));
+        }
+
+        methods.AddRange(entityState.DomainMethods.Select(name =>
+            new CommandHandlerMethodContract(name, "void", [])));
+
+        var entityNamespace = string.IsNullOrWhiteSpace(entityState.Subfolder)
+            ? GeneratorConstants.DomainEntitiesNamespace
+            : $"{GeneratorConstants.DomainEntitiesNamespace}.{entityState.Subfolder.Replace('/', '.').Replace('\\', '.')}";
+        return new CommandHandlerEntityContract(entityState.EntityName, entityNamespace, methods);
+    }
+
+    private static CommandHandlerEntityContract? ResolveProjectEntity(string? entityName, ProjectModel project)
+    {
+        if (string.IsNullOrWhiteSpace(entityName))
+        {
+            return null;
+        }
+
+        var entity = project.Entities.FirstOrDefault(candidate =>
+            string.Equals(candidate.Name, entityName, StringComparison.OrdinalIgnoreCase));
+        return entity is null
+            ? null
+            : new CommandHandlerEntityContract(entity.Name, entity.Namespace, entity.Methods);
     }
 }

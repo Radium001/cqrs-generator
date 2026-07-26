@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 {{ usings_block }}
 namespace {{ namespace }}
 {
-    public class {{ handler_type }} : IRequestHandler<{{ command_type }}{{ if has_response }}, {{ response_type }}{{ end }}>
+    public class {{ handler_type }} : IRequestHandler<{{ command_type }}>
     {
 {{ if has_dependencies }}{{ dependencies_fields }}
 
@@ -13,9 +13,9 @@ namespace {{ namespace }}
         {
 {{ dependencies_assignments }}        }
 
-{{ end }}        public async {{ handler_return_type }} Handle({{ command_type }} request, CancellationToken cancellationToken)
+{{ end }}        public {{ if is_async }}async {{ end }}Task Handle({{ command_type }} request, CancellationToken cancellationToken)
         {
-            throw new NotImplementedException();
+            {{ handler_body }}
         }
     }
 }

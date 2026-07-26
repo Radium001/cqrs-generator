@@ -47,12 +47,6 @@ public sealed class GenerationSessionRelationshipService
                 }
                 return true;
 
-            case WebPageGeneratorState webPageState when string.Equals(child.RelationshipName, "Query", StringComparison.Ordinal):
-                if (!webPageState.QueryRefs.Any(existing => ArtifactKey.Equals(existing, reference)))
-                {
-                    webPageState.QueryRefs.Add(reference);
-                }
-                return true;
         }
 
         return false;

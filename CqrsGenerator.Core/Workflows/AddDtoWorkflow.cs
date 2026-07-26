@@ -7,7 +7,7 @@ public sealed record AddDtoWorkflowRequest(
     string FeaturePath,
     string DtoName,
     IReadOnlyList<PropertySpec> Properties,
-    bool UpdateWebImports = true,
+    string? WebFeaturePath = null,
     string? Subfolder = null);
 
 public sealed class AddDtoWorkflow
@@ -30,14 +30,14 @@ public sealed class AddDtoWorkflow
             Subfolder = request.Subfolder,
         });
 
-        if (request.UpdateWebImports)
+        if (!string.IsNullOrWhiteSpace(request.WebFeaturePath))
         {
             var dtoNamespace = StringUtilities.ToNamespace(
                 config.RootNamespace,
                 config.FeatureRoot,
                 StringUtilities.NormalizeFeaturePath(request.FeaturePath),
                 config.DtoFolderName);
-            plan.Merge(_context.CreateRazorImportsGenerator().AddUsing(request.FeaturePath, dtoNamespace));
+            plan.Merge(_context.CreateRazorImportsGenerator().AddUsing(request.WebFeaturePath, dtoNamespace));
         }
 
         return plan;

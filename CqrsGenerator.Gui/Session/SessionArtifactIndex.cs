@@ -441,11 +441,6 @@ public sealed class SessionArtifactIndex
             return commandState.FeatureRef?.FeaturePath;
         }
 
-        if (parent?.State is WebPageGeneratorState webPageState)
-        {
-            return webPageState.FeatureRef?.FeaturePath;
-        }
-
         return null;
     }
 

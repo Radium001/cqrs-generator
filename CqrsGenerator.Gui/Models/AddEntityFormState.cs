@@ -13,5 +13,4 @@ public sealed record AddEntityFormState(
     IReadOnlyList<PropertySpec> ManualProperties,
     bool GenerateFactoryMethod,
     bool GenerateEfMapping,
-    bool GenerateInterface,
     IReadOnlyList<string> DomainMethods);

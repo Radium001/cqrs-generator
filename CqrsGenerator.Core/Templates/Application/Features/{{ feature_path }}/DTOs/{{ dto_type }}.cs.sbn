@@ -1,3 +1,6 @@
+{{ if usings_block != "" }}{{ usings_block }}
+
+{{ end }}
 namespace {{ namespace }}
 {
     public class {{ dto_type }}

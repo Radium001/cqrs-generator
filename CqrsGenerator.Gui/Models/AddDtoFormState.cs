@@ -7,5 +7,5 @@ public sealed record AddDtoFormState(
     string? FeaturePath,
     string DtoName,
     IReadOnlyList<PropertySpec> Properties,
-    bool UpdateWebImports,
+    string? WebFeaturePath,
     string? Subfolder);

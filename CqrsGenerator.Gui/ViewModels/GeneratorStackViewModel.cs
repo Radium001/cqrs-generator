@@ -136,7 +136,6 @@ public sealed partial class GeneratorStackViewModel : ObservableObject
         AddQueryRootSessionViewModel => GeneratorNodeKind.Query,
         CommandRootSessionViewModel => GeneratorNodeKind.Command,
         RepositoryRootSessionViewModel => GeneratorNodeKind.Repository,
-        AddWebPageRootSessionViewModel => GeneratorNodeKind.WebPage,
         CreateFeatureRootSessionViewModel => GeneratorNodeKind.Feature,
         DtoRootSessionViewModel => GeneratorNodeKind.Dto,
         EntityRootSessionViewModel => GeneratorNodeKind.Entity,
@@ -497,9 +496,6 @@ public sealed partial class GeneratorStackViewModel : ObservableObject
                 break;
             case RepositoryRootSessionViewModel r:
                 r.SetGenerationSession(_generationSession, _navigator);
-                break;
-            case AddWebPageRootSessionViewModel w:
-                w.SetGenerationSession(_generationSession, _navigator);
                 break;
             case DtoRootSessionViewModel dto:
                 dto.SetGenerationSession(_generationSession);

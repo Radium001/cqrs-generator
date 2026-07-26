@@ -235,8 +235,6 @@ public sealed class SessionGraphPhase10Tests
             CreateQueryServiceMethod = true,
             MethodName = "GetUsersAsync",
         });
-        session.References.SetRef(node.Id, "Feature", new ArtifactRef(GeneratorNodeKind.Feature, ArtifactOrigin.Project, "Users", FeaturePath: "Users"));
-
         var definition = new QueryGeneratorDefinition();
         var serviceProvider = new QueryDefinitionServiceProvider(new CapturingAddQueryPlanService(), new QueryServiceSuggestionService());
         var targetRootPath = Path.GetTempPath();
@@ -254,6 +252,108 @@ public sealed class SessionGraphPhase10Tests
         Assert.NotNull(serviceProvider.PlanService.LastFormState);
         Assert.NotNull(serviceProvider.PlanService.LastFormState!.QueryService);
         Assert.Equal(QueryServiceSuggestionMode.CreateNew, serviceProvider.PlanService.LastFormState.QueryService!.Mode);
+    }
+
+    [Fact]
+    public void CommandGeneratorDefinition_BuildPlan_ResolvesProjectRepositoryContract()
+    {
+        var (session, navigator) = CreateSessionAndNavigator();
+        var baseProjectModel = CreateProjectModel();
+        var projectModel = new ProjectModel
+        {
+            Paths = baseProjectModel.Paths,
+            Features = baseProjectModel.Features,
+            DependencyInjection = baseProjectModel.DependencyInjection,
+            Repositories =
+            [
+                new RepositoryInfo("IUserRepository", "IUserRepository.cs")
+                {
+                    EntityName = "User",
+                    Methods = [new("DeleteAsync", "Task", [new("int", "id"), new("CancellationToken", "ct")])],
+                },
+            ],
+            Entities = [new EntityInfo("User", "User.cs", "User", "Domain.Entities", null)],
+        };
+        var state = new CommandGeneratorState
+        {
+            CommandName = "DeleteUser",
+            FeaturePath = "Users",
+        };
+        state.Parameters.Add(new PropertySpec("int", "Id"));
+        state.RepositoryRefs.Add(new ArtifactRef(
+            GeneratorNodeKind.Repository,
+            ArtifactOrigin.Project,
+            "IUserRepository",
+            ProjectPath: "IUserRepository.cs"));
+        var node = navigator.CreateRoot(GeneratorNodeKind.Command, state);
+        var planService = new CapturingAddCommandPlanService();
+
+        new CommandGeneratorDefinition().BuildPlan(
+            node,
+            state,
+            session,
+            new CoreWorkflowContext(
+                new ProjectWorkspaceContext(Path.GetTempPath(), CqrsGenerator.Core.Configuration.GeneratorConfig.ForTargetRoot(Path.GetTempPath()), projectModel),
+                null!,
+                null!,
+                new CommandDefinitionServiceProvider(planService)));
+
+        var repository = Assert.Single(planService.LastFormState!.HandlerScaffoldContext!.Repositories);
+        Assert.Equal("IUserRepository", repository.InterfaceType);
+        Assert.Contains(repository.Methods, method => method.Name == "DeleteAsync");
+    }
+
+    [Fact]
+    public void CommandGeneratorDefinition_BuildPlan_ResolvesSessionRepositoryAndEntityContracts()
+    {
+        var (session, navigator) = CreateSessionAndNavigator();
+        var projectModel = CreateProjectModel();
+        var entityState = new EntityGeneratorState
+        {
+            EntityName = "User",
+            GenerateFactoryMethod = true,
+        };
+        entityState.Properties.Add(new PropertySpec("string", "Name"));
+        var entityNode = navigator.CreateRoot(GeneratorNodeKind.Entity, entityState);
+
+        var repositoryState = new RepositoryGeneratorState
+        {
+            InterfaceName = "IUserRepository",
+            EntityRef = new ArtifactRef(GeneratorNodeKind.Entity, ArtifactOrigin.Session, "User", entityNode.Id),
+        };
+        var repositoryNode = navigator.CreateRoot(GeneratorNodeKind.Repository, repositoryState);
+
+        var commandState = new CommandGeneratorState
+        {
+            CommandName = "CreateUser",
+            FeaturePath = "Users",
+        };
+        commandState.Parameters.Add(new PropertySpec("string", "Name"));
+        commandState.RepositoryRefs.Add(new ArtifactRef(
+            GeneratorNodeKind.Repository,
+            ArtifactOrigin.Session,
+            "IUserRepository",
+            repositoryNode.Id));
+        var commandNode = navigator.CreateRoot(GeneratorNodeKind.Command, commandState);
+        var planService = new CapturingAddCommandPlanService();
+
+        new CommandGeneratorDefinition().BuildPlan(
+            commandNode,
+            commandState,
+            session,
+            new CoreWorkflowContext(
+                new ProjectWorkspaceContext(Path.GetTempPath(), CqrsGenerator.Core.Configuration.GeneratorConfig.ForTargetRoot(Path.GetTempPath()), projectModel),
+                null!,
+                null!,
+                new CommandDefinitionServiceProvider(planService)));
+
+        var repository = Assert.Single(planService.LastFormState!.HandlerScaffoldContext!.Repositories);
+        Assert.Equal("User", repository.EntityType);
+        var addMethod = Assert.Single(repository.Methods, method => method.Name == "AddAsync");
+        Assert.Equal(GeneratorConstants.CancellationTokenType, addMethod.Parameters[^1].Type);
+        Assert.Equal(GeneratorConstants.CancellationTokenParamName, addMethod.Parameters[^1].Name);
+        Assert.Contains(repository.Methods, method => method.Name == GeneratorConstants.RepoMethodDelete);
+        Assert.Contains(repository.Entity!.Methods, method => method.Name == "Create" && method.IsStatic);
     }
 
     [Fact]
@@ -278,8 +378,6 @@ public sealed class SessionGraphPhase10Tests
             CreateQueryServiceMethod = true,
             MethodName = "GetUsersAsync",
         });
-        session.References.SetRef(node.Id, "Feature", new ArtifactRef(GeneratorNodeKind.Feature, ArtifactOrigin.Project, "Users", FeaturePath: "Users"));
-
         var validation = new QueryGeneratorDefinition().Validate(node, (QueryGeneratorState)node.State, session);
 
         Assert.False(validation.IsValid);
@@ -287,7 +385,7 @@ public sealed class SessionGraphPhase10Tests
     }
 
     [Fact]
-    public void ArtifactIndex_NoDuplicatesWhenProjectAndSessionHaveSameName()
+    public void ArtifactIndex_PreservesProjectAndSessionArtifactsWithSameName()
     {
         var (session, navigator) = CreateSessionAndNavigator();
         session.Artifacts.SetProjectModel(CreateProjectModel());
@@ -296,7 +394,8 @@ public sealed class SessionGraphPhase10Tests
 
         var dtos = session.Artifacts.GetDtos();
 
-        Assert.Single(dtos, d => d.Name == "UserDto");
+        Assert.Contains(dtos, d => d.Name == "UserDto" && d.IsFromProject);
+        Assert.Contains(dtos, d => d.Name == "UserDto" && d.IsFromSession);
     }
 
     [Fact]
@@ -348,9 +447,9 @@ public sealed class SessionGraphPhase10Tests
         var queryState = new QueryGeneratorState
         {
             QueryName = "GetUsers",
+            ResultDtoRef = new ArtifactRef(GeneratorNodeKind.Dto, ArtifactOrigin.Session, "UserDto", dtoNode.Id),
         };
-        var queryNode = navigator.CreateRoot(GeneratorNodeKind.Query, queryState);
-        session.References.SetRef(queryNode.Id, "ResultDto", new ArtifactRef(GeneratorNodeKind.Dto, ArtifactOrigin.Session, "UserDto", dtoNode.Id));
+        navigator.CreateRoot(GeneratorNodeKind.Query, queryState);
 
         var usages = navigator.FindUsages(dtoNode.Id);
 
@@ -373,7 +472,7 @@ public sealed class SessionGraphPhase10Tests
         var usages = navigator.FindUsages(entityNode.Id);
 
         Assert.Single(usages);
-        Assert.Equal(nameof(RepositoryGeneratorState.EntityRef), usages[0].PropertyName);
+        Assert.Equal("Entity", usages[0].PropertyName);
     }
 
     [Fact]
@@ -388,7 +487,7 @@ public sealed class SessionGraphPhase10Tests
         var usages = navigator.FindUsages(repoNode.Id);
 
         Assert.Single(usages);
-        Assert.Equal(nameof(CommandGeneratorState.RepositoryRefs), usages[0].PropertyName);
+        Assert.Equal("Repository", usages[0].PropertyName);
     }
 
     [Fact]
@@ -410,9 +509,9 @@ public sealed class SessionGraphPhase10Tests
         var queryState = new QueryGeneratorState
         {
             QueryName = "GetUsers",
+            ResultDtoRef = new ArtifactRef(GeneratorNodeKind.Dto, ArtifactOrigin.Session, "UserDto", dtoNode.Id),
         };
-        var queryNode = navigator.CreateRoot(GeneratorNodeKind.Query, queryState);
-        session.References.SetRef(queryNode.Id, "ResultDto", new ArtifactRef(GeneratorNodeKind.Dto, ArtifactOrigin.Session, "UserDto", dtoNode.Id));
+        navigator.CreateRoot(GeneratorNodeKind.Query, queryState);
 
         var removed = navigator.RemoveNode(dtoNode.Id);
 
@@ -427,9 +526,9 @@ public sealed class SessionGraphPhase10Tests
         var queryState = new QueryGeneratorState
         {
             QueryName = "GetUsers",
+            ResultDtoRef = new ArtifactRef(GeneratorNodeKind.Dto, ArtifactOrigin.Session, "MissingDto", Guid.NewGuid()),
         };
         var node = navigator.CreateRoot(GeneratorNodeKind.Query, queryState);
-        session.References.SetRef(node.Id, "ResultDto", new ArtifactRef(GeneratorNodeKind.Dto, ArtifactOrigin.Session, "MissingDto", Guid.NewGuid()));
         var definition = catalog.GetDefinition(GeneratorNodeKind.Query);
 
         var result = definition.Validate(node, session);
@@ -521,8 +620,8 @@ public sealed class SessionGraphPhase10Tests
             new QueryGeneratorState
             {
                 QueryName = "GetUsers",
+                ResultDtoRef = new ArtifactRef(GeneratorNodeKind.Dto, ArtifactOrigin.Session, "MissingDto", Guid.NewGuid()),
             });
-        session.References.SetRef(invalidNode.Id, "ResultDto", new ArtifactRef(GeneratorNodeKind.Dto, ArtifactOrigin.Session, "MissingDto", Guid.NewGuid()));
 
         var result = validationService.Validate(session);
 
@@ -541,7 +640,6 @@ public sealed class SessionGraphPhase10Tests
             new StubDefinition(GeneratorNodeKind.Command, "Command"),
             new StubDefinition(GeneratorNodeKind.Repository, "Repository"),
             new StubDefinition(GeneratorNodeKind.Entity, "Entity"),
-            new StubDefinition(GeneratorNodeKind.WebPage, "Web Page"),
         ];
     }
 
@@ -585,9 +683,9 @@ public sealed class SessionGraphPhase10Tests
                     session.FindNode(repoState.EntityRef.NodeId.Value) is null)
                     errors.Add("Dangling entity reference");
             }
-            else if (state is QueryGeneratorState)
+            else if (state is QueryGeneratorState queryState)
             {
-                var resultDtoRef = session.References.GetRef(node.Id, "ResultDto");
+                var resultDtoRef = queryState.ResultDtoRef;
                 if (resultDtoRef?.NodeId.HasValue == true &&
                     session.FindNode(resultDtoRef.NodeId.Value) is null)
                     errors.Add("Dangling result DTO reference");
@@ -643,6 +741,23 @@ public sealed class SessionGraphPhase10Tests
         public AddQueryFormState? LastFormState { get; private set; }
 
         public GenerationPlan BuildPlan(ProjectWorkspaceContext context, AddQueryFormState formState)
+        {
+            LastFormState = formState;
+            return new GenerationPlan();
+        }
+    }
+
+    private sealed class CommandDefinitionServiceProvider(CapturingAddCommandPlanService planService) : IServiceProvider
+    {
+        public object? GetService(Type serviceType) =>
+            serviceType == typeof(IAddCommandPlanService) ? planService : null;
+    }
+
+    private sealed class CapturingAddCommandPlanService : IAddCommandPlanService
+    {
+        public AddCommandFormState? LastFormState { get; private set; }
+
+        public GenerationPlan BuildPlan(ProjectWorkspaceContext context, AddCommandFormState formState)
         {
             LastFormState = formState;
             return new GenerationPlan();

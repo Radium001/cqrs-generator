@@ -1,8 +1,0 @@
-namespace {{ namespace }}
-{
-    public interface {{ entity_interface }}
-    {
-        int Id { get; }
-{{ if has_properties }}{{ properties_block }}
-{{ end }}    }
-}

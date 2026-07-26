@@ -28,7 +28,7 @@ public class AddQueryRefactorTests
             "GetUsersAsync",
             true,
             true,
-            true));
+            null));
 
         Assert.True(result.Succeeded);
         Assert.NotNull(result.Request);
@@ -56,7 +56,7 @@ public class AddQueryRefactorTests
             "GetUsersAsync",
             false,
             false,
-            false));
+            null));
 
         Assert.True(result.Succeeded);
         Assert.NotNull(result.Request);
@@ -93,7 +93,7 @@ public class AddQueryRefactorTests
             "GetUsersAsync",
             true,
             true,
-            true));
+            null));
 
         Assert.True(result.Succeeded);
         var dtoSelection = Assert.IsType<UseSharedFeatureDtoSelection>(result.Request!.DtoSelection);
@@ -122,7 +122,7 @@ public class AddQueryRefactorTests
             "GetUsersAsync",
             true,
             true,
-            true));
+            null));
 
         Assert.True(result.Succeeded);
         Assert.Equal(expectedReturnType, result.Request!.QueryService!.ReturnType);
@@ -145,7 +145,7 @@ public class AddQueryRefactorTests
             "GetUsersAsync",
             false,
             true,
-            true));
+            null));
 
         Assert.True(result.Succeeded);
         Assert.NotNull(result.Request);
@@ -171,7 +171,7 @@ public class AddQueryRefactorTests
             string.Empty,
             true,
             true,
-            true));
+            null));
 
         Assert.True(result.Succeeded);
         Assert.NotNull(result.Request);
@@ -255,7 +255,7 @@ public class AddQueryRefactorTests
             "GetUsersAsync",
             true,
             true,
-            true));
+            null));
 
         Assert.False(result.Succeeded);
         Assert.Contains(result.Errors, error => error.Contains("could not be resolved automatically", StringComparison.OrdinalIgnoreCase));

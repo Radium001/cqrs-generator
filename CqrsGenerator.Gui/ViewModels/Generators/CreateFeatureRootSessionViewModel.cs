@@ -15,7 +15,6 @@ public sealed partial class CreateFeatureRootSessionViewModel : ObservableObject
     IGeneratorNodeEditorViewModel
 {
     private readonly ICreateFeaturePlanService _planService;
-    private readonly ICreateFeatureScenarioOutlineBuilder _scenarioOutlineBuilder;
     private readonly GenerationActionDescriptor? _actionDescriptor;
     private readonly bool _isStandalone;
     private FeatureGeneratorState? _sessionState;
@@ -29,12 +28,10 @@ public sealed partial class CreateFeatureRootSessionViewModel : ObservableObject
     public CreateFeatureRootSessionViewModel(
         GenerationActionDescriptor? actionDescriptor,
         ICreateFeaturePlanService planService,
-        ICreateFeatureScenarioOutlineBuilder scenarioOutlineBuilder,
         bool isStandalone,
         GeneratorNode? node = null)
     {
         _planService = planService;
-        _scenarioOutlineBuilder = scenarioOutlineBuilder;
         _actionDescriptor = actionDescriptor;
         _isStandalone = isStandalone;
         Node = node;

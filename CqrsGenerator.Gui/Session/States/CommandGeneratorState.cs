@@ -1,19 +1,11 @@
 using System.Collections.ObjectModel;
-using System.Collections.Specialized;
 using CqrsGenerator.Core.Generation;
 
 namespace CqrsGenerator.Gui.Session.States;
 
 public sealed class CommandGeneratorState
 {
-    private bool _syncingRepositories;
     private ArtifactRef? _featureRef;
-
-    public CommandGeneratorState()
-    {
-        RepositoryRefs.CollectionChanged += OnRepositoryRefsChanged;
-        RepositoryNodeIds.CollectionChanged += OnRepositoryNodeIdsChanged;
-    }
 
     public ArtifactRef? FeatureRef
     {
@@ -29,7 +21,7 @@ public sealed class CommandGeneratorState
 
     public string CommandName { get; set; } = string.Empty;
 
-    public string? ResponseType { get; set; }
+    public bool GenerateHandlerBody { get; set; } = true;
 
     public ObservableCollection<PropertySpec> Parameters { get; } = new();
 
@@ -37,57 +29,9 @@ public sealed class CommandGeneratorState
 
     public ObservableCollection<string> StandardDependencyNames { get; } = new();
 
-    public bool UpdateWebImports { get; set; } = true;
+    public ArtifactRef? WebFeatureRef { get; set; }
 
-    public ObservableCollection<Guid> RepositoryNodeIds { get; } = new();
-
-    private void OnRepositoryRefsChanged(object? sender, NotifyCollectionChangedEventArgs e)
-    {
-        if (_syncingRepositories)
-        {
-            return;
-        }
-
-        _syncingRepositories = true;
-        try
-        {
-            RepositoryNodeIds.Clear();
-            foreach (var reference in RepositoryRefs.Where(reference => reference.NodeId.HasValue))
-            {
-                RepositoryNodeIds.Add(reference.NodeId!.Value);
-            }
-        }
-        finally
-        {
-            _syncingRepositories = false;
-        }
-    }
-
-    private void OnRepositoryNodeIdsChanged(object? sender, NotifyCollectionChangedEventArgs e)
-    {
-        if (_syncingRepositories)
-        {
-            return;
-        }
-
-        _syncingRepositories = true;
-        try
-        {
-            RepositoryRefs.Clear();
-            foreach (var nodeId in RepositoryNodeIds)
-            {
-                RepositoryRefs.Add(new ArtifactRef(
-                    GeneratorNodeKind.Repository,
-                    ArtifactOrigin.Session,
-                    string.Empty,
-                    nodeId));
-            }
-        }
-        finally
-        {
-            _syncingRepositories = false;
-        }
-    }
+    public bool HasWebFeatureSelection { get; set; }
 
     private static ArtifactRef? CreateProjectFeatureRef(string? featurePath)
     {

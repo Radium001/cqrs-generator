@@ -27,6 +27,7 @@ public sealed class RepositoryGenerator(
                 new(GeneratorConstants.RepoMethodGetById, $"Task<{request.EntityName}>", [new("int", GeneratorConstants.DefaultIdParamName)]),
                 new(GeneratorConstants.RepoMethodAdd, "Task", [new(request.EntityName, GeneratorConstants.DefaultEntityParamName)]),
                 new(GeneratorConstants.RepoMethodUpdate, "Task", [new(request.EntityName, GeneratorConstants.DefaultEntityParamName)]),
+                new(GeneratorConstants.RepoMethodDelete, "Task", [new("int", GeneratorConstants.DefaultIdParamName)]),
             ];
 
         var baseMethods = new HashSet<string> { GeneratorConstants.RepoMethodGetById, GeneratorConstants.RepoMethodAdd, GeneratorConstants.RepoMethodUpdate, GeneratorConstants.RepoMethodDelete };
@@ -36,6 +37,18 @@ public sealed class RepositoryGenerator(
             .Select(m => GenerateImplMethod(request.EntityName, m)));
 
         var entityNamespace = request.EntityNamespace ?? GeneratorConstants.DomainEntitiesNamespace;
+        var methodTypeNames = methods
+            .SelectMany(method => method.Parameters.Select(parameter => parameter.Type).Append(method.ReturnType))
+            .ToArray();
+        var methodUsingsBlock = CSharpTypeMetadataResolver.CreateUsingsBlock(
+            methodTypeNames,
+            "System.Threading",
+            "System.Threading.Tasks");
+        var implementationMethodUsingsBlock = CSharpTypeMetadataResolver.CreateUsingsBlock(
+            methodTypeNames,
+            "System",
+            "System.Threading",
+            "System.Threading.Tasks");
 
         plan.AddCreateFile(
             Path.Combine(config.TargetRootPath, config.ApplicationPath, "Common", "Interfaces", "Repositories", $"{interfaceName}.cs"),
@@ -45,6 +58,7 @@ public sealed class RepositoryGenerator(
                 entity_name = request.EntityName,
                 entity_namespace = entityNamespace,
                 @namespace = interfaceNamespace,
+                usings_block = methodUsingsBlock,
                 interface_methods = interfaceMethods,
             }));
 
@@ -58,6 +72,7 @@ public sealed class RepositoryGenerator(
                 entity_namespace = entityNamespace,
                 interface_namespace = interfaceNamespace,
                 @namespace = implementationNamespace,
+                usings_block = implementationMethodUsingsBlock,
                 impl_methods = implMethods,
             }));
 
@@ -83,7 +98,7 @@ public sealed class RepositoryGenerator(
         if (allParams.Length > 0) allParams += ", ";
         allParams += $"{GeneratorConstants.CancellationTokenType} {GeneratorConstants.CancellationTokenParamName} = default";
         return $$"""
-                public async {{m.ReturnType}} {{m.Name}}({{allParams}})
+                public {{m.ReturnType}} {{m.Name}}({{allParams}})
                 {
                     {{GeneratorConstants.DefaultStubBody}}
                 }
@@ -107,5 +122,15 @@ public sealed class RepositoryGenerator(
     private static void Validate(RepositoryGenerationRequest request)
     {
         CSharpNameValidator.EnsureIdentifier(request.EntityName, nameof(request.EntityName));
+        foreach (var method in request.Methods)
+        {
+            CSharpNameValidator.EnsureIdentifier(method.Name, nameof(method.Name));
+            CSharpTypeMetadataResolver.EnsureValid(method.ReturnType, nameof(method.ReturnType));
+            foreach (var parameter in method.Parameters)
+            {
+                CSharpNameValidator.EnsureIdentifier(parameter.Name, nameof(parameter.Name));
+                CSharpTypeMetadataResolver.EnsureValid(parameter.Type, nameof(parameter.Type));
+            }
+        }
     }
 }

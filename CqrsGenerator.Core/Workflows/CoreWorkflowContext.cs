@@ -34,7 +34,6 @@ internal sealed class CoreWorkflowContext
     public AddRepositoryScenarioWorkflow CreateAddRepositoryScenarioWorkflow() => new(this);
     public AddCommandScenarioWorkflow CreateAddCommandScenarioWorkflow() => new(this);
     public AddEntityWorkflow CreateAddEntityWorkflow() => new(this);
-    public AddWebPageWorkflow CreateAddWebPageWorkflow() => new(this);
 
     public DtoGenerator CreateDtoGenerator() => new(Config, CreateRenderer());
     public LocalQueryDtoGenerator CreateLocalQueryDtoGenerator() => new(Config, CreateRenderer());
@@ -43,7 +42,6 @@ internal sealed class CoreWorkflowContext
     public QueryServiceGenerator CreateQueryServiceGenerator() => new(Config, CreateRenderer(), _editor);
     public RepositoryGenerator CreateRepositoryGenerator() => new(Config, CreateRenderer(), _editor);
     public EntityGenerator CreateEntityGenerator() => new(Config, CreateRenderer());
-    public WebPageGenerator CreateWebPageGenerator() => new(Config, CreateRenderer());
     public FeatureStructureGenerator CreateFeatureStructureGenerator() => new(Config);
     public RazorImportsGenerator CreateRazorImportsGenerator() => new(Config);
 

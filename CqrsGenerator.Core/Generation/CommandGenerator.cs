@@ -17,10 +17,6 @@ public sealed class CommandGenerator(GeneratorConfig config, ScribanTemplateRend
         var handlerType = string.Format(GeneratorConstants.HandlerClassPattern, commandBaseName);
         var commandDirectory = Path.Combine(GetFeatureRoot(featurePath), config.CommandsFolderName, commandBaseName);
         var commandNamespace = StringUtilities.ToNamespace(config.RootNamespace, config.FeatureRoot, featurePath, config.CommandsFolderName, commandBaseName);
-        var hasResponse = !string.IsNullOrWhiteSpace(request.ResponseType);
-        var commandInterface = hasResponse ? $"ICommand<{request.ResponseType}>" : "ICommand";
-        var handlerReturnType = hasResponse ? $"Task<{request.ResponseType}>" : "Task";
-
         plan.AddCreateFile(
             Path.Combine(commandDirectory, $"{commandType}.cs"),
             renderer.Render(TemplateNames.Command, new
@@ -29,8 +25,8 @@ public sealed class CommandGenerator(GeneratorConfig config, ScribanTemplateRend
                 operation_name = commandBaseName,
                 command_type = commandType,
                 @namespace = commandNamespace,
-                command_interface = commandInterface,
-                usings_block = "",
+                command_interface = "ICommand",
+                usings_block = ComputeUsingsBlock(request.Properties, []),
                 has_properties = request.Properties.Count > 0,
                 constructor_parameters = string.Join(", ", request.Properties.Select(ToConstructorParameter)),
                 constructor_assignments = string.Join("", request.Properties.Select(property => $"            {property.Name} = {StringUtilities.ToCamelCase(property.Name)};\n")),
@@ -44,6 +40,11 @@ public sealed class CommandGenerator(GeneratorConfig config, ScribanTemplateRend
             $"{d.Type} {StringUtilities.ToCamelCase(d.Name)}"));
         var dependenciesAssignments = string.Join("\n", request.Dependencies.Select(d =>
             $"            _{StringUtilities.ToCamelCase(d.Name)} = {StringUtilities.ToCamelCase(d.Name)};\n"));
+        var handlerBody = CommandHandlerBodyBuilder.Build(request, commandBaseName);
+        if (handlerBody.Warning is not null)
+        {
+            plan.AddWarning(handlerBody.Warning);
+        }
 
         plan.AddCreateFile(
             Path.Combine(commandDirectory, $"{handlerType}.cs"),
@@ -54,20 +55,14 @@ public sealed class CommandGenerator(GeneratorConfig config, ScribanTemplateRend
                 command_type = commandType,
                 handler_type = handlerType,
                 @namespace = commandNamespace,
-                usings_block = ComputeUsingsBlock(request.Dependencies),
-                has_response = hasResponse,
-                response_type = request.ResponseType ?? "",
-                handler_return_type = handlerReturnType,
+                usings_block = ComputeUsingsBlock([], request.Dependencies, handlerBody.RequiredNamespaces),
                 has_dependencies = hasDependencies,
                 dependencies_fields = dependenciesFields,
                 dependencies_params = dependenciesParams,
                 dependencies_assignments = dependenciesAssignments,
+                is_async = handlerBody.IsAsync,
+                handler_body = handlerBody.Body,
             }));
-
-        if (hasResponse)
-        {
-            plan.AddWarning("Command с результатом требует, чтобы UnitOfWorkBehavior поддерживал ICommand<TResponse>.");
-        }
 
         return plan;
     }
@@ -84,6 +79,7 @@ public sealed class CommandGenerator(GeneratorConfig config, ScribanTemplateRend
             {
                 throw new ArgumentException("Property type is required.", nameof(property.Type));
             }
+            CSharpTypeMetadataResolver.EnsureValid(property.Type, nameof(property.Type));
         }
     }
 
@@ -93,9 +89,16 @@ public sealed class CommandGenerator(GeneratorConfig config, ScribanTemplateRend
     private static string ToConstructorParameter(PropertySpec property) =>
         $"{property.Type} {StringUtilities.ToCamelCase(property.Name)}";
 
-    private static string ComputeUsingsBlock(IReadOnlyList<CommandHandlerDependency> dependencies)
+    private static string ComputeUsingsBlock(
+        IReadOnlyList<PropertySpec> properties,
+        IReadOnlyList<CommandHandlerDependency> dependencies,
+        IReadOnlyList<string>? requiredNamespaces = null)
     {
         var usings = new HashSet<string>();
+        foreach (var @namespace in CSharpTypeMetadataResolver.GetNamespaces(properties.Select(property => property.Type)))
+        {
+            usings.Add($"using {@namespace};");
+        }
         foreach (var dep in dependencies)
         {
             if (dep.Type.EndsWith("Repository"))
@@ -103,7 +106,14 @@ public sealed class CommandGenerator(GeneratorConfig config, ScribanTemplateRend
             else if (GeneratorConstants.StandardDependencies.Contains(dep.Type))
                 usings.Add("using Application.Common.Interfaces;");
         }
+        foreach (var @namespace in requiredNamespaces ?? [])
+        {
+            if (!string.IsNullOrWhiteSpace(@namespace))
+            {
+                usings.Add($"using {@namespace};");
+            }
+        }
 
-        return usings.Count == 0 ? "" : "\n" + string.Join("\n", usings) + "\n";
+        return usings.Count == 0 ? "" : string.Join("\n", usings.OrderBy(value => value, StringComparer.Ordinal));
     }
 }

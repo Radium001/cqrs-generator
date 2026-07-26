@@ -29,14 +29,12 @@ public class AddEntityRequestBuilderTests
             ManualProperties: [new PropertySpec("DateTime", "CreatedAt")],
             GenerateFactoryMethod: true,
             GenerateEfMapping: true,
-            GenerateInterface: true,
             DomainMethods: ["Archive"]));
 
         Assert.True(result.Succeeded);
         Assert.NotNull(result.Request);
         Assert.Equal("Application", result.Request!.EntityName);
         Assert.Equal("Admin", result.Request.SubFolder);
-        Assert.True(result.Request.GenerateInterface);
         Assert.Contains(result.Request.Properties, property => property.Name == "AbonentId" && property.Type == "int");
         Assert.Contains(result.Request.Properties, property => property.Name == "CreatedAt" && property.Type == "DateTime");
         Assert.Contains(result.Request.DomainMethods, method => method == "Archive");

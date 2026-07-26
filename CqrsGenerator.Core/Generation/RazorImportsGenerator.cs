@@ -27,7 +27,14 @@ public sealed class RazorImportsGenerator(GeneratorConfig config)
 
         var normalizedPath = StringUtilities.NormalizeFeaturePath(featurePath)
             .Replace('/', Path.DirectorySeparatorChar);
-        var importsPath = Path.Combine(config.WebFeatureRootPath, normalizedPath, "_Imports.razor");
+        var webFeaturePath = Path.Combine(config.WebFeatureRootPath, normalizedPath);
+        if (!Directory.Exists(webFeaturePath))
+        {
+            plan.AddWarning($"Web feature '{featurePath}' не найдена; _Imports.razor не изменён.");
+            return;
+        }
+
+        var importsPath = Path.Combine(webFeaturePath, "_Imports.razor");
         var usingLines = namespacesToImport
             .Distinct(StringComparer.Ordinal)
             .Select(ns => $"@using {ns}")
@@ -46,14 +53,13 @@ public sealed class RazorImportsGenerator(GeneratorConfig config)
 
         if (File.Exists(importsPath))
         {
-            var content = File.ReadAllText(importsPath);
-            var missingLines = GetMissingLines(content, usingLines);
-            if (missingLines.Length == 0)
+            plan.TransformFile(importsPath, content =>
             {
-                return;
-            }
-
-            plan.AddUpdateFile(importsPath, AppendLines(content, missingLines));
+                var missingLines = GetMissingLines(content, usingLines);
+                return missingLines.Length == 0
+                    ? content
+                    : AppendLines(content, missingLines);
+            });
             return;
         }
 

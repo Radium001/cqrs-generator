@@ -31,7 +31,7 @@ public sealed class AddDtoRequestBuilder : IAddDtoRequestBuilder
                     formState.FeaturePath,
                     dtoName,
                     formState.Properties,
-                    formState.UpdateWebImports,
+                    formState.WebFeaturePath,
                     normalizedSubfolder));
         }
         catch (ArgumentException ex)

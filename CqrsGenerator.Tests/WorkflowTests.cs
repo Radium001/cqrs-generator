@@ -10,13 +10,15 @@ public class WorkflowTests
     public void AddDtoWorkflow_CreatesDtoAndWebImports()
     {
         using var tmp = new TempProject();
+        tmp.AddDir("Web/Features/Users");
         var config = GeneratorConfig.ForTargetRoot(tmp.Root);
         var factory = new CoreWorkflowFactory();
 
         var plan = factory.AddDto(config).CreatePlan(new AddDtoWorkflowRequest(
             "Users",
             "UserDto",
-            [new("int", "Id")]));
+            [new("int", "Id")],
+            WebFeaturePath: "Users"));
 
         Assert.Contains(plan.Files, f => f.Path.EndsWith("UserDto.cs"));
         Assert.Contains(plan.Files, f => f.Path.EndsWith("_Imports.razor"));
@@ -24,9 +26,47 @@ public class WorkflowTests
     }
 
     [Fact]
+    public void AddDtoWorkflow_CanTargetDifferentWebFeature()
+    {
+        using var tmp = new TempProject();
+        tmp.AddDir("Web/Features/Applications");
+        var config = GeneratorConfig.ForTargetRoot(tmp.Root);
+
+        var plan = new CoreWorkflowFactory().AddDto(config).CreatePlan(new AddDtoWorkflowRequest(
+            "Contracts",
+            "ContractDto",
+            [],
+            WebFeaturePath: "Applications"));
+
+        var imports = Assert.Single(plan.Files, file => file.Path.EndsWith("_Imports.razor"));
+        Assert.EndsWith(
+            Path.Combine("Web", "Features", "Applications", "_Imports.razor"),
+            imports.Path,
+            StringComparison.Ordinal);
+        Assert.Contains("@using Application.Features.Contracts.DTOs", imports.Content);
+    }
+
+    [Fact]
+    public void AddDtoWorkflow_MissingSelectedWebFeature_DoesNotCreateIt()
+    {
+        using var tmp = new TempProject();
+        var config = GeneratorConfig.ForTargetRoot(tmp.Root);
+
+        var plan = new CoreWorkflowFactory().AddDto(config).CreatePlan(new AddDtoWorkflowRequest(
+            "Contracts",
+            "ContractDto",
+            [],
+            WebFeaturePath: "Missing"));
+
+        Assert.DoesNotContain(plan.Files, file => file.Path.EndsWith("_Imports.razor"));
+        Assert.Contains(plan.Warnings, warning => warning.Message.Contains("не найдена", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void AddQueryWorkflow_WithCreateDto_CreatesDtoQueryHandlerAndSingleImportsFile()
     {
         using var tmp = new TempProject();
+        tmp.AddDir("Web/Features/Users");
         var config = GeneratorConfig.ForTargetRoot(tmp.Root);
         var factory = new CoreWorkflowFactory();
 
@@ -39,7 +79,8 @@ public class WorkflowTests
                 [new("int", "Id")],
                 false,
                 false,
-                null));
+                null,
+                WebFeaturePath: "Users"));
 
         Assert.Contains(plan.Files, f => f.Path.EndsWith("UserDto.cs"));
         Assert.Contains(plan.Files, f => f.Path.EndsWith(Path.Combine("Queries", "GetUsers", "UserDto.cs")));
@@ -70,7 +111,7 @@ public class WorkflowTests
                 false,
                 null));
 
-        var dtoFile = Assert.Single(plan.Files.Where(f => f.Path.EndsWith("UserLookupDto.cs")));
+        var dtoFile = Assert.Single(plan.Files, f => f.Path.EndsWith("UserLookupDto.cs"));
         Assert.Contains("public string DisplayName { get; set; }", dtoFile.Content);
         Assert.Contains("public int Age { get; set; }", dtoFile.Content);
         Assert.DoesNotContain("public Guid Id { get; set; }", dtoFile.Content);
@@ -118,7 +159,60 @@ public static class DependencyInjection
                     "Task<UserDto>",
                     "UserDto")));
 
-        Assert.Contains(plan.Files, file => file.Path.EndsWith(Path.Combine("Infrastructure", "Data", "QueryServices", "UsersQueryService.cs")));
+        var intf = Assert.Single(plan.Files, file => file.Path.EndsWith("IUsersQueryService.cs"));
+        var implementation = Assert.Single(plan.Files, file => file.Path.EndsWith(Path.Combine("Infrastructure", "Data", "QueryServices", "UsersQueryService.cs")));
+        Assert.Contains("using Application.Features.Users.DTOs;", intf.Content);
+        Assert.Contains("using Application.Features.Users.DTOs;", implementation.Content);
+    }
+
+    [Fact]
+    public void AddQueryWorkflow_WithLocalDto_AddsLocalDtoNamespaceToQueryService()
+    {
+        using var tmp = new TempProject();
+        tmp.AddFile("Infrastructure/DependencyInjection.cs", """
+using Microsoft.Extensions.DependencyInjection;
+
+namespace Infrastructure;
+
+public static class DependencyInjection
+{
+    public static IServiceCollection AddInfrastructure(this IServiceCollection services)
+    {
+        return services;
+    }
+}
+""");
+        var config = GeneratorConfig.ForTargetRoot(tmp.Root);
+        var factory = new CoreWorkflowFactory();
+
+        var plan = factory.AddQuery(config)
+            .CreatePlan(new AddQueryWorkflowRequest(
+                "Users",
+                "GetUsers",
+                new CreateLocalQueryDtoSelection("UserDto", [], "GetUsers"),
+                ResponseShape.List,
+                [],
+                false,
+                false,
+                new QueryServiceMethodWorkflowRequest(
+                    "IUsersQueryService",
+                    "UsersQueryService",
+                    null,
+                    null,
+                    true,
+                    true,
+                    true,
+                    false,
+                    "GetUsersAsync",
+                    "Task<List<UserDto>>",
+                    "UserDto")));
+
+        var intf = Assert.Single(plan.Files, file => file.Path.EndsWith("IUsersQueryService.cs"));
+        var implementation = Assert.Single(plan.Files, file => Path.GetFileName(file.Path) == "UsersQueryService.cs");
+        Assert.Contains("using Application.Features.Users.Queries.GetUsers;", intf.Content);
+        Assert.Contains("using Application.Features.Users.Queries.GetUsers;", implementation.Content);
+        Assert.Contains("using System.Collections.Generic;", intf.Content);
+        Assert.Contains("using System.Collections.Generic;", implementation.Content);
     }
 
     [Fact]

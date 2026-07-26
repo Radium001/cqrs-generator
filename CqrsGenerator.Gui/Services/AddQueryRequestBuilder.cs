@@ -136,7 +136,7 @@ public sealed class AddQueryRequestBuilder : IAddQueryRequestBuilder
                     formState.GenerateHandlerBody,
                     formState.GenerateQueryServiceBody,
                     queryServiceRequest,
-                    formState.UpdateWebImports));
+                    formState.WebFeaturePath));
         }
         catch (ArgumentException ex)
         {

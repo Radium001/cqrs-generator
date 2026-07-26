@@ -194,21 +194,22 @@ public class GeneratorTests
         Assert.DoesNotContain("ICommand<", cmd.Content);
         Assert.Contains("Task Handle", handler.Content);
         Assert.DoesNotContain("Task<", handler.Content);
+        Assert.DoesNotContain("public async Task Handle", handler.Content);
     }
 
     [Fact]
-    public void CommandGenerator_WithResponse_ReturnsTaskT()
+    public void CommandGenerator_CollectionParameter_AddsCollectionsUsing()
     {
         var plan = new CommandGenerator(Config, Renderer).CreatePlan(new()
         {
-            FeaturePath = "Test", CommandName = "CreateUser", ResponseType = "int",
+            FeaturePath = "Test",
+            CommandName = "CreateUsers",
+            Properties = [new("IEnumerable<int>", "Ids")],
         });
-        var cmd = plan.Files.First(f => f.Path.EndsWith("Command.cs"));
-        var handler = plan.Files.First(f => f.Path.EndsWith("Handler.cs"));
 
-        Assert.Contains("ICommand<int>", cmd.Content);
-        Assert.Contains("Task<int> Handle", handler.Content);
-        Assert.Contains("UnitOfWorkBehavior", plan.Warnings.Single().Message);
+        var command = plan.Files.Single(file => file.Path.EndsWith("Command.cs"));
+        Assert.Contains("using System.Collections.Generic;", command.Content);
+        Assert.Contains("public IEnumerable<int> Ids", command.Content);
     }
 
     [Fact]
@@ -267,6 +268,191 @@ public class GeneratorTests
             FeaturePath = "Test", CommandName = "CreateUser",
             Properties = [new("", "Name")],
         }));
+    }
+
+    [Fact]
+    public void CommandGenerator_Create_WithExactContracts_GeneratesFactoryAndAdd()
+    {
+        var plan = new CommandGenerator(Config, Renderer).CreatePlan(new()
+        {
+            FeaturePath = "Test",
+            CommandName = "CreateUser",
+            Properties = [new("string", "Name")],
+            Dependencies =
+            [
+                new("IUserRepository", "userRepository"),
+                new("ICurrentUserContext", "currentUserContext"),
+            ],
+            HandlerScaffoldContext = new CommandHandlerScaffoldContext(
+            [
+                new CommandHandlerRepositoryContract(
+                    "IUserRepository",
+                    "userRepository",
+                    "User",
+                    [new("AddAsync", "Task", [new("User", "entity"), new("CancellationToken", "ct")])],
+                    new CommandHandlerEntityContract(
+                        "User",
+                        "Domain.Entities",
+                        [new("Create", "User", [new("string", "name"), new("int", "userId")], IsStatic: true)])),
+            ]),
+        });
+
+        var handler = plan.Files.Single(file => file.Path.EndsWith("Handler.cs"));
+        Assert.Contains("public async Task Handle", handler.Content);
+        Assert.Contains("var entity = User.Create(request.Name, _currentUserContext.UserId);", handler.Content);
+        Assert.Contains("await _userRepository.AddAsync(entity, cancellationToken);", handler.Content);
+        Assert.Contains("\n            await _userRepository.AddAsync", handler.Content);
+        Assert.DoesNotContain("\n                        await _userRepository.AddAsync", handler.Content);
+        Assert.Contains("using Domain.Entities;", handler.Content);
+        Assert.Empty(plan.Warnings);
+    }
+
+    [Fact]
+    public void CommandGenerator_Update_WithExactContracts_GeneratesMethodChain()
+    {
+        var plan = new CommandGenerator(Config, Renderer).CreatePlan(new()
+        {
+            FeaturePath = "Test",
+            CommandName = "UpdateUser",
+            Properties = [new("int", "Id"), new("string", "Name")],
+            Dependencies = [new("IUserRepository", "userRepository")],
+            HandlerScaffoldContext = new CommandHandlerScaffoldContext(
+            [
+                new CommandHandlerRepositoryContract(
+                    "IUserRepository",
+                    "userRepository",
+                    "User",
+                    [
+                        new("GetByIdAsync", "Task<User>", [new("int", "id"), new("CancellationToken", "ct")]),
+                        new("UpdateAsync", "Task", [new("User", "entity"), new("CancellationToken", "ct")]),
+                    ],
+                    new CommandHandlerEntityContract(
+                        "User",
+                        "Domain.Entities",
+                        [new("Update", "void", [new("string", "name")])])),
+            ]),
+        });
+
+        var handler = plan.Files.Single(file => file.Path.EndsWith("Handler.cs"));
+        Assert.Contains("var entity = await _userRepository.GetByIdAsync(request.Id, cancellationToken);", handler.Content);
+        Assert.Contains("entity.Update(request.Name);", handler.Content);
+        Assert.Contains("await _userRepository.UpdateAsync(entity, cancellationToken);", handler.Content);
+        Assert.DoesNotContain("\n                        entity.Update", handler.Content);
+        Assert.DoesNotContain("\n                        await _userRepository.UpdateAsync", handler.Content);
+        Assert.Empty(plan.Warnings);
+    }
+
+    [Fact]
+    public void CommandGenerator_Delete_WithExactContract_GeneratesDeleteCall()
+    {
+        var plan = new CommandGenerator(Config, Renderer).CreatePlan(new()
+        {
+            FeaturePath = "Test",
+            CommandName = "DeleteUser",
+            Properties = [new("int", "Id")],
+            Dependencies = [new("IUserRepository", "userRepository")],
+            HandlerScaffoldContext = new CommandHandlerScaffoldContext(
+            [
+                new CommandHandlerRepositoryContract(
+                    "IUserRepository",
+                    "userRepository",
+                    "User",
+                    [new("DeleteAsync", "Task", [new("int", "id"), new("CancellationToken", "ct")])],
+                    null),
+            ]),
+        });
+
+        var handler = plan.Files.Single(file => file.Path.EndsWith("Handler.cs"));
+        Assert.Contains("public async Task Handle", handler.Content);
+        Assert.Contains("await _userRepository.DeleteAsync(request.Id, cancellationToken);", handler.Content);
+        Assert.Empty(plan.Warnings);
+    }
+
+    [Fact]
+    public void CommandGenerator_AutomaticBodyWithoutMatch_UsesDescriptiveFallback()
+    {
+        var plan = new CommandGenerator(Config, Renderer).CreatePlan(new()
+        {
+            FeaturePath = "Test",
+            CommandName = "DeleteUser",
+            Properties = [new("int", "Id")],
+            Dependencies = [new("IUserRepository", "userRepository")],
+        });
+
+        var handler = plan.Files.Single(file => file.Path.EndsWith("Handler.cs"));
+        Assert.Contains("throw new NotImplementedException();", handler.Content);
+        Assert.DoesNotContain("no selected repository contract is available", handler.Content);
+        Assert.Contains("no selected repository contract is available", Assert.Single(plan.Warnings).Message);
+    }
+
+    [Fact]
+    public void CommandGenerator_AutomaticBodyWithTwoMatchingRepositories_UsesAmbiguityFallback()
+    {
+        var deleteMethod = new CommandHandlerMethodContract(
+            "DeleteAsync",
+            "Task",
+            [new("int", "id"), new("CancellationToken", "ct")]);
+        var plan = new CommandGenerator(Config, Renderer).CreatePlan(new()
+        {
+            FeaturePath = "Test",
+            CommandName = "DeleteUser",
+            Properties = [new("int", "Id")],
+            Dependencies =
+            [
+                new("IUserRepository", "userRepository"),
+                new("IArchiveRepository", "archiveRepository"),
+            ],
+            HandlerScaffoldContext = new CommandHandlerScaffoldContext(
+            [
+                new("IUserRepository", "userRepository", "User", [deleteMethod], null),
+                new("IArchiveRepository", "archiveRepository", "User", [deleteMethod], null),
+            ]),
+        });
+
+        var handler = plan.Files.Single(file => file.Path.EndsWith("Handler.cs"));
+        Assert.Contains("throw new NotImplementedException();", handler.Content);
+        Assert.DoesNotContain("more than one Delete method chain", handler.Content);
+        Assert.Contains("more than one Delete method chain", Assert.Single(plan.Warnings).Message);
+    }
+
+    [Fact]
+    public void CommandGenerator_DeleteWithMissingId_ReportsParameterMismatchOnlyInWarning()
+    {
+        var plan = new CommandGenerator(Config, Renderer).CreatePlan(new()
+        {
+            FeaturePath = "Test",
+            CommandName = "DeleteUser",
+            Dependencies = [new("IUserRepository", "userRepository")],
+            HandlerScaffoldContext = new CommandHandlerScaffoldContext(
+            [
+                new(
+                    "IUserRepository",
+                    "userRepository",
+                    "User",
+                    [new("DeleteAsync", "Task", [new("int", "id"), new("CancellationToken", "ct")])],
+                    null),
+            ]),
+        });
+
+        var handler = plan.Files.Single(file => file.Path.EndsWith("Handler.cs"));
+        Assert.Contains("throw new NotImplementedException();", handler.Content);
+        Assert.DoesNotContain("parameters do not match", handler.Content);
+        Assert.Contains("DeleteAsync parameters do not match", Assert.Single(plan.Warnings).Message);
+    }
+
+    [Fact]
+    public void CommandGenerator_DisabledAutomaticBody_UsesPlainStubWithoutWarning()
+    {
+        var plan = new CommandGenerator(Config, Renderer).CreatePlan(new()
+        {
+            FeaturePath = "Test",
+            CommandName = "DeleteUser",
+            GenerateHandlerBody = false,
+        });
+
+        var handler = plan.Files.Single(file => file.Path.EndsWith("Handler.cs"));
+        Assert.Contains("throw new NotImplementedException();", handler.Content);
+        Assert.Empty(plan.Warnings);
     }
 
     // ═══ DtoGenerator (5) ═══
@@ -328,7 +514,34 @@ public class GeneratorTests
 
         var file = Assert.Single(plan.Files);
         AssertPathEndsWith(file.Path, "DTOs", "Admin", "Internal", "Dto.cs");
-        Assert.Contains("namespace Application.Features.Test.DTOs.Admin.Internal", file.Content);
+        Assert.Contains("namespace Application.Features.Test.DTOs", file.Content);
+        Assert.DoesNotContain("DTOs.Admin", file.Content);
+    }
+
+    [Fact]
+    public void DtoGenerator_StandardPropertyTypes_AddsRequiredUsings()
+    {
+        var plan = new DtoGenerator(Config, Renderer).CreatePlan(new()
+        {
+            FeaturePath = "Test",
+            DtoName = "Dto",
+            Properties = [new("List<Guid>", "Ids"), new("DateTime?", "CreatedAt")],
+        });
+
+        var file = Assert.Single(plan.Files);
+        Assert.Contains("using System;", file.Content);
+        Assert.Contains("using System.Collections.Generic;", file.Content);
+    }
+
+    [Fact]
+    public void DtoGenerator_InvalidPropertyType_Throws()
+    {
+        Assert.Throws<ArgumentException>(() => new DtoGenerator(Config, Renderer).CreatePlan(new()
+        {
+            FeaturePath = "Test",
+            DtoName = "Dto",
+            Properties = [new("List<", "Ids")],
+        }));
     }
 
     [Fact]
@@ -426,12 +639,22 @@ public class GeneratorTests
             ImplementationNamespace = GenerationNaming.GetQueryServiceImplementationNamespace(Config, "Test"),
             InitialReturnType = "Task<IEnumerable<UserDto>>", InitialMethodName = "GetUsersAsync",
             GenerateImplementationBody = true, DtoTypeName = "UserDto",
+            DtoNamespace = "Application.Features.Test.DTOs",
             InitialParameters = [new("int", "TabNumber")],
         });
 
         Assert.Equal(2, plan.Files.Count);
-        Assert.Contains(plan.Files, f => f.Path.EndsWith("ITestQueryService.cs"));
-        Assert.Contains(plan.Files, f => f.Path.EndsWith("TestQueryService.cs"));
+        var intf = plan.Files.Single(f => f.Path.EndsWith("ITestQueryService.cs"));
+        var implementation = plan.Files.Single(f => Path.GetFileName(f.Path) == "TestQueryService.cs");
+        Assert.Contains("using System.Collections.Generic;", intf.Content);
+        Assert.Contains("using Application.Features.Test.DTOs;", intf.Content);
+        Assert.Contains("using System.Collections.Generic;", implementation.Content);
+        Assert.Contains("using Application.Features.Test.DTOs;", implementation.Content);
+        Assert.Contains(
+            "return await ExecuteAsync(x => x.QueryAsync<UserDto>(sql, new { tabNumber }, ct));",
+            implementation.Content);
+        Assert.DoesNotContain("_connection", implementation.Content);
+        Assert.DoesNotContain("@TabNumber", implementation.Content);
     }
 
     [Fact]
@@ -448,7 +671,51 @@ public class GeneratorTests
         });
 
         Assert.Equal(2, plan.Files.Count);
-        Assert.Contains(plan.Files, f => f.Path.EndsWith("TestQueryService.cs"));
+        var implementation = plan.Files.Single(f => Path.GetFileName(f.Path) == "TestQueryService.cs");
+        Assert.Contains(
+            "return await ExecuteAsync(x => x.QueryAsync<UserDto>(sql, ct: ct));",
+            implementation.Content);
+        Assert.DoesNotContain("new {", implementation.Content);
+    }
+
+    [Fact]
+    public void QueryServiceCreator_WithSingleBody_UsesQueryFirstOrDefaultAsync()
+    {
+        var gen = new QueryServiceGenerator(Config, Renderer, new());
+        var plan = gen.CreateServicePlan(new()
+        {
+            FeaturePath = "Test", InterfaceName = "ITestQueryService", ImplementationName = "TestQueryService",
+            ImplementationPath = GenerationNaming.GetQueryServiceImplementationPath(Config, "Test", "TestQueryService"),
+            ImplementationNamespace = GenerationNaming.GetQueryServiceImplementationNamespace(Config, "Test"),
+            InitialReturnType = "Task<UserDto>", InitialMethodName = "GetUserAsync",
+            GenerateImplementationBody = true, DtoTypeName = "UserDto",
+            InitialParameters = [new("int", "UserId")],
+        });
+
+        var implementation = plan.Files.Single(f => Path.GetFileName(f.Path) == "TestQueryService.cs");
+        Assert.Contains(
+            "return await ExecuteAsync(x => x.QueryFirstOrDefaultAsync<UserDto>(sql, new { userId }, ct));",
+            implementation.Content);
+    }
+
+    [Fact]
+    public void QueryServiceCreator_WithBooleanBody_UsesExecuteScalarOrDefaultAsync()
+    {
+        var gen = new QueryServiceGenerator(Config, Renderer, new());
+        var plan = gen.CreateServicePlan(new()
+        {
+            FeaturePath = "Test", InterfaceName = "ITestQueryService", ImplementationName = "TestQueryService",
+            ImplementationPath = GenerationNaming.GetQueryServiceImplementationPath(Config, "Test", "TestQueryService"),
+            ImplementationNamespace = GenerationNaming.GetQueryServiceImplementationNamespace(Config, "Test"),
+            InitialReturnType = "Task<bool>", InitialMethodName = "ExistsAsync",
+            GenerateImplementationBody = true,
+            InitialParameters = [new("int", "UserId")],
+        });
+
+        var implementation = plan.Files.Single(f => Path.GetFileName(f.Path) == "TestQueryService.cs");
+        Assert.Contains(
+            "return await ExecuteAsync(x => x.ExecuteScalarOrDefaultAsync<bool>(sql, new { userId }, ct));",
+            implementation.Content);
     }
 
     [Fact]
@@ -595,14 +862,14 @@ namespace Ns
         Assert.DoesNotContain("\n            Task<int> GetAsync", interfaceUpdate.Content);
 
         Assert.Contains("""
-        public async Task<int> GetAsync(string name, CancellationToken ct = default)
+        public Task<int> GetAsync(string name, CancellationToken ct = default)
         {
             throw new NotImplementedException();
         }
     }
 }
 """, implementationUpdate.Content);
-        Assert.DoesNotContain("\n            public async Task<int> GetAsync", implementationUpdate.Content);
+        Assert.DoesNotContain("\n            public Task<int> GetAsync", implementationUpdate.Content);
     }
 
     [Fact]
@@ -619,10 +886,36 @@ namespace Ns
             InterfaceName = "IFoo", ImplementationName = "Foo",
             ReturnType = "Task<IEnumerable<SomeDto>>", MethodName = "GetAllAsync",
             GenerateImplementationBody = true, DtoTypeName = "SomeDto",
+            DtoNamespace = "Application.Features.Test.DTOs",
+            Parameters = [new("int", "OwnerId")],
         });
 
         Assert.Empty(plan.Conflicts);
         Assert.Equal(2, plan.Operations.Count);
+        var interfaceUpdate = Assert.IsType<UpdateFileOperation>(
+            plan.Operations.Single(operation => operation.Path == Path.GetFullPath(ifacePath)));
+        var implementationUpdate = Assert.IsType<UpdateFileOperation>(
+            plan.Operations.Single(operation => operation.Path == Path.GetFullPath(implPath)));
+        Assert.Contains("using System.Collections.Generic;", interfaceUpdate.Content);
+        Assert.Contains("using Application.Features.Test.DTOs;", interfaceUpdate.Content);
+        Assert.Contains("using System.Collections.Generic;", implementationUpdate.Content);
+        Assert.Contains("using Application.Features.Test.DTOs;", implementationUpdate.Content);
+        Assert.Contains(
+            "return await ExecuteAsync(x => x.QueryAsync<SomeDto>(sql, new { ownerId }, ct));",
+            implementationUpdate.Content);
+        Assert.DoesNotContain("_connection", implementationUpdate.Content);
+        Assert.Single(
+            interfaceUpdate.Content.Split(["\r\n", "\n"], StringSplitOptions.None),
+            line => line == "using System.Collections.Generic;");
+        Assert.Single(
+            interfaceUpdate.Content.Split(["\r\n", "\n"], StringSplitOptions.None),
+            line => line == "using Application.Features.Test.DTOs;");
+        Assert.Single(
+            implementationUpdate.Content.Split(["\r\n", "\n"], StringSplitOptions.None),
+            line => line == "using System.Collections.Generic;");
+        Assert.Single(
+            implementationUpdate.Content.Split(["\r\n", "\n"], StringSplitOptions.None),
+            line => line == "using Application.Features.Test.DTOs;");
     }
 
     [Fact]
@@ -643,245 +936,6 @@ namespace Ns
         Assert.Contains(plan.Conflicts, c => c.Path.Contains("Foo.cs"));
     }
 
-    // ═══ WebPageGenerator (9) ═══
-
-    [Fact]
-    public void WebPageGenerator_WithImports_CreatesImportsFile()
-    {
-        var gen = new WebPageGenerator(Config, Renderer);
-        var plan = gen.CreatePlan(new()
-        {
-            WebFeaturePath = "Test", PageName = "TestPage", Route = "/test", CreateImports = true,
-        });
-        Assert.Contains(plan.Files, f => f.Path.EndsWith("_Imports.razor"));
-    }
-
-    [Fact]
-    public void WebPageGenerator_ExistingImports_AddsOnlyMissingUsings()
-    {
-        using var tmp = new TempProject();
-        tmp.AddFile("Web/Features/Users/_Imports.razor", "@using Application.Features.Users");
-        var config = GeneratorConfig.ForTargetRoot(tmp.Root);
-        var gen = new WebPageGenerator(config, Renderer);
-
-        var plan = gen.CreatePlan(new()
-        {
-            WebFeaturePath = "Users", PageName = "UsersPage", Route = "/users", CreateImports = true,
-        });
-
-        var update = Assert.IsType<UpdateFileOperation>(Assert.Single(plan.Operations.OfType<UpdateFileOperation>()));
-        Assert.Equal(Path.Combine(tmp.Root, "Web", "Features", "Users", "_Imports.razor"), update.Path);
-        Assert.Contains("@using Application.Features.Users", update.Content);
-        Assert.Contains("@using Web.Features.Users", update.Content);
-        Assert.Single(update.Content.Split(["\r\n", "\n"], StringSplitOptions.None), line => line == "@using Application.Features.Users");
-    }
-
-    [Fact]
-    public void WebPageGenerator_PlannedImports_ComposesWithoutDuplicateFileOperation()
-    {
-        var basePlan = new GenerationPlan();
-        var importsPath = Path.Combine(Config.WebFeatureRootPath, "Users", "_Imports.razor");
-        basePlan.AddCreateFile(importsPath, "@using Existing.Namespace");
-
-        new WebPageGenerator(Config, Renderer).ApplyToPlan(basePlan, new()
-        {
-            WebFeaturePath = "Users", PageName = "UsersPage", Route = "/users", CreateImports = true,
-        });
-
-        var imports = Assert.Single(basePlan.Operations, operation => operation.Path == importsPath);
-        var create = Assert.IsType<CreateFileOperation>(imports);
-        Assert.Contains("@using Existing.Namespace", create.Content);
-        Assert.Contains("@using Application.Features.Users", create.Content);
-        Assert.Contains("@using Web.Features.Users", create.Content);
-        Assert.DoesNotContain(basePlan.Conflicts, conflict => conflict.Path == importsPath);
-    }
-
-    [Fact]
-    public void WebPageGenerator_RouteWithAbonentId_GeneratesParameter()
-    {
-        var gen = new WebPageGenerator(Config, Renderer);
-        var plan = gen.CreatePlan(new()
-        {
-            WebFeaturePath = "Test", PageName = "TestPage", Route = "/test/{abonentId:int}",
-        });
-        var page = plan.Files.First(f => f.Path.EndsWith(".razor"));
-        Assert.Contains("[Parameter]", page.Content);
-        Assert.Contains("public int AbonentId", page.Content);
-    }
-
-    [Fact]
-    public void WebPageGenerator_RouteWithMultipleParameters_GeneratesAll()
-    {
-        var gen = new WebPageGenerator(Config, Renderer);
-        var plan = gen.CreatePlan(new()
-        {
-            WebFeaturePath = "Test", PageName = "TestPage", Route = "/{groupId:int}/{name}",
-        });
-        var page = plan.Files.First(f => f.Path.EndsWith(".razor"));
-        Assert.Contains("public int GroupId", page.Content);
-        Assert.Contains("public string Name", page.Content);
-    }
-
-    [Fact]
-    public void WebPageGenerator_RouteWithoutSlash_Throws()
-    {
-        var gen = new WebPageGenerator(Config, Renderer);
-        Assert.Throws<ArgumentException>(() => gen.CreatePlan(new()
-        {
-            WebFeaturePath = "Test", PageName = "TestPage", Route = "no-slash",
-        }));
-    }
-
-    [Fact]
-    public void WebPageGenerator_WithOneQuery_GeneratesDataGrid()
-    {
-        var gen = new WebPageGenerator(Config, Renderer);
-        var plan = gen.CreatePlan(new()
-        {
-            WebFeaturePath = "Test",
-            PageName = "ItemsPage",
-            Route = "/items",
-            Queries =
-            [
-                new WebPageQueryBinding(
-                    QueryName: "GetItemsQuery",
-                    VariableName: "_items",
-                    Args: "",
-                    ResultTypeName: "ItemDto",
-                    ResponseShape: ResponseShape.List,
-                    HasRefresh: true),
-            ],
-        });
-        var page = plan.Files.First(f => f.Path.EndsWith(".razor"));
-        Assert.Contains("TItem=\"ItemDto\"", page.Content);
-        Assert.Contains("AllowPaging=\"true\"", page.Content);
-    }
-
-    [Fact]
-    public void WebPageGenerator_WithOneQuery_GeneratesOnInitializedWithMediatorCall()
-    {
-        var gen = new WebPageGenerator(Config, Renderer);
-        var plan = gen.CreatePlan(new()
-        {
-            WebFeaturePath = "Test",
-            PageName = "ItemsPage",
-            Route = "/items",
-            Queries =
-            [
-                new WebPageQueryBinding(
-                    QueryName: "GetItemsQuery",
-                    VariableName: "_items",
-                    Args: "AbonentId",
-                    ResultTypeName: "ItemDto",
-                    ResponseShape: ResponseShape.List,
-                    HasRefresh: true),
-            ],
-        });
-        var page = plan.Files.First(f => f.Path.EndsWith(".razor"));
-        Assert.Contains("await Mediator.SendAsync(new GetItemsQuery(AbonentId))", page.Content);
-    }
-
-    [Fact]
-    public void WebPageGenerator_WithOneQuery_GeneratesRefreshMethod()
-    {
-        var gen = new WebPageGenerator(Config, Renderer);
-        var plan = gen.CreatePlan(new()
-        {
-            WebFeaturePath = "Test",
-            PageName = "ItemsPage",
-            Route = "/items",
-            Queries =
-            [
-                new WebPageQueryBinding(
-                    QueryName: "GetItemsQuery",
-                    VariableName: "_items",
-                    Args: "",
-                    ResultTypeName: "ItemDto",
-                    ResponseShape: ResponseShape.List,
-                    HasRefresh: true),
-            ],
-        });
-        var page = plan.Files.First(f => f.Path.EndsWith(".razor"));
-        var content = page.Content;
-        Assert.Contains("private async Task LoadItemsAsync() =>", content);
-        Assert.Contains("_items = await Mediator.SendAsync(new GetItemsQuery())", content);
-    }
-
-    [Fact]
-    public void WebPageGenerator_WithMultipleQueries_GeneratesAllVariablesAndInvocations()
-    {
-        var gen = new WebPageGenerator(Config, Renderer);
-        var plan = gen.CreatePlan(new()
-        {
-            WebFeaturePath = "Test",
-            PageName = "DashboardPage",
-            Route = "/dashboard",
-            Queries =
-            [
-                new WebPageQueryBinding("GetItemsQuery", "_items", "", "ItemDto", ResponseShape.List, HasRefresh: true),
-                new WebPageQueryBinding("GetCategoriesQuery", "_categories", "", "CategoryDto", ResponseShape.List, HasRefresh: false),
-                new WebPageQueryBinding("GetStatusesQuery", "_statuses", "", "StatusDto", ResponseShape.List, HasRefresh: false),
-            ],
-        });
-        var page = plan.Files.First(f => f.Path.EndsWith(".razor"));
-        Assert.Contains("IEnumerable<ItemDto> _items", page.Content);
-        Assert.Contains("IEnumerable<CategoryDto> _categories", page.Content);
-        Assert.Contains("IEnumerable<StatusDto> _statuses", page.Content);
-        Assert.Contains("await Mediator.SendAsync(new GetItemsQuery())", page.Content);
-        Assert.Contains("await Mediator.SendAsync(new GetCategoriesQuery())", page.Content);
-        Assert.Contains("await Mediator.SendAsync(new GetStatusesQuery())", page.Content);
-    }
-
-    [Fact]
-    public void WebPageGenerator_NoQueries_GeneratesPlaceholder()
-    {
-        var gen = new WebPageGenerator(Config, Renderer);
-        var plan = gen.CreatePlan(new()
-        {
-            WebFeaturePath = "Test", PageName = "SimplePage", Route = "/simple",
-        });
-        var page = plan.Files.First(f => f.Path.EndsWith(".razor"));
-        Assert.Contains("// await Mediator.SendAsync(new YourQuery())", page.Content);
-        Assert.DoesNotContain("_isFirstLoad", page.Content);
-        Assert.DoesNotContain("IEnumerable<", page.Content);
-    }
-
-    [Fact]
-    public void WebPageGenerator_SingleResponse_GeneratesNonNullableField()
-    {
-        var gen = new WebPageGenerator(Config, Renderer);
-        var plan = gen.CreatePlan(new()
-        {
-            WebFeaturePath = "Test",
-            PageName = "DetailPage",
-            Route = "/detail",
-            Queries =
-            [
-                new WebPageQueryBinding("GetItemQuery", "_item", "", "ItemDto", ResponseShape.Single, HasRefresh: false),
-            ],
-        });
-        var page = plan.Files.First(f => f.Path.EndsWith(".razor"));
-        Assert.Contains("ItemDto _item = default!", page.Content);
-        Assert.DoesNotContain("IEnumerable", page.Content);
-    }
-
-    [Fact]
-    public void WebPageGenerator_HasRefreshFalse_SkipsRefreshMethod()
-    {
-        var gen = new WebPageGenerator(Config, Renderer);
-        var plan = gen.CreatePlan(new()
-        {
-            WebFeaturePath = "Test",
-            PageName = "ItemsPage",
-            Route = "/items",
-            Queries =
-            [
-                new WebPageQueryBinding("GetItemsQuery", "_items", "", "ItemDto", ResponseShape.List, HasRefresh: false),
-            ],
-        });
-        var page = plan.Files.First(f => f.Path.EndsWith(".razor"));
-        Assert.DoesNotContain("LoadItemsAsync", page.Content);
-    }
 
     // ═══ EntityGenerator (6) ═══
 
@@ -938,7 +992,7 @@ namespace Ns
             EfMappingFields = [("AbonentId", "IdAbonent"), ("Name", "Name")],
         });
         var mapping = plan.Files.First(f => f.Path.EndsWith("MyEntity.cs") && f.Path.Contains("EntitiesMapping"));
-        Assert.Contains("public MyEntity()", mapping.Content);
+        Assert.DoesNotContain("public MyEntity()", mapping.Content);
         Assert.Contains("public MyEntity(Entity entity)", mapping.Content);
         Assert.Contains("this.IdAbonent = entity.AbonentId", mapping.Content);
         Assert.Contains("entity.Name = this.Name", mapping.Content);
@@ -946,7 +1000,7 @@ namespace Ns
     }
 
     [Fact]
-    public void EntityGenerator_ExistingMapping_AddsObsoleteAndWarning()
+    public void EntityGenerator_ExistingMapping_LeavesFileUntouchedAndAddsWarning()
     {
         using var tmp = new TempProject();
         var mappingDir = tmp.AddDir("Infrastructure/Data/EntitiesMapping");
@@ -971,10 +1025,9 @@ namespace Infrastructure.Data.Entities
             GenerateEfMapping = true,
         });
 
-        var updateOp = plan.Operations.OfType<UpdateFileOperation>()
-            .FirstOrDefault(o => o.Path.Contains("EntitiesMapping"));
-        Assert.NotNull(updateOp);
-        Assert.Contains("[Obsolete", updateOp.Content);
+        Assert.DoesNotContain(
+            plan.Operations,
+            operation => operation is UpdateFileOperation && operation.Path.Contains("EntitiesMapping"));
         Assert.NotEmpty(plan.Warnings);
         Assert.Contains("уже существует", plan.Warnings[0].Message, StringComparison.OrdinalIgnoreCase);
     }
@@ -995,6 +1048,19 @@ namespace Infrastructure.Data.Entities
         Assert.Contains("DopParamId = dopParamId", entity.Content);
     }
 
+    [Fact]
+    public void EntityGenerator_GuidProperty_AddsSystemUsing()
+    {
+        var plan = new EntityGenerator(Config, Renderer).CreatePlan(new()
+        {
+            EntityName = "Permission",
+            Properties = [new("Guid", "ExternalId")],
+        });
+
+        var entity = plan.Files.Single(file => file.Path.Contains("Domain"));
+        Assert.Contains("using System;", entity.Content);
+    }
+
     // ═══ RepositoryGenerator (4) ═══
 
     [Fact]
@@ -1008,6 +1074,8 @@ namespace Infrastructure.Data.Entities
         var intf = plan.Files.First(f => f.Path.EndsWith("IHApplicationRepository.cs"));
         Assert.Contains("public interface IHApplicationRepository", intf.Content);
         Assert.Contains("Application.Common.Interfaces.Repositories", intf.Content);
+        Assert.Contains("Task DeleteAsync(int id, CancellationToken ct = default);", intf.Content);
+        Assert.True(RepositoryMethodCatalog.Delete.IsSelectedByDefault);
     }
 
     [Fact]
@@ -1020,6 +1088,31 @@ namespace Infrastructure.Data.Entities
         });
         var intf = plan.Files.First(f => f.Path.EndsWith("IFooRepository.cs"));
         Assert.Contains("My.Custom.Namespace", intf.Content);
+    }
+
+    [Fact]
+    public void RepositoryGenerator_CustomCollectionMethod_AddsUsingAndAvoidsAsyncStub()
+    {
+        var plan = new RepositoryGenerator(Config, Renderer, new()).CreatePlan(new()
+        {
+            EntityName = "Foo",
+            Methods =
+            [
+                new RepositoryMethodSpec(
+                    "FindAsync",
+                    "Task<IEnumerable<Foo>>",
+                    [new PropertySpec("IReadOnlyList<Guid>", "ids")]),
+            ],
+        });
+
+        var @interface = plan.Files.Single(file => file.Path.EndsWith("IFooRepository.cs"));
+        var implementation = plan.Files.Single(file =>
+            file.Path.EndsWith("FooRepository.cs") &&
+            !file.Path.EndsWith("IFooRepository.cs"));
+        Assert.Contains("using System;", @interface.Content);
+        Assert.Contains("using System.Collections.Generic;", @interface.Content);
+        Assert.Contains("public Task<IEnumerable<Foo>> FindAsync", implementation.Content);
+        Assert.DoesNotContain("public async Task<IEnumerable<Foo>>", implementation.Content);
     }
 
     [Fact]
@@ -1064,7 +1157,6 @@ public static class DependencyInjection
             EntityProperties: [new PropertySpec("int", "Id")],
             GenerateEntityFactoryMethod: true,
             GenerateEntityEfMapping: false,
-            GenerateEntityInterface: false,
             EntityDomainMethods: [],
             EntityEfMappingFields: null,
             AddDependencyInjectionRegistration: false,
@@ -1083,10 +1175,9 @@ public static class DependencyInjection
             new AddCommandWorkflowRequest(
                 "Users",
                 "CreateUser",
-                null,
                 [],
                 [new CommandHandlerDependency("IUserRepository", "userRepository")],
-                true),
+                null),
             [
                 new AddRepositoryScenarioWorkflowRequest(
                     "User",
@@ -1096,7 +1187,6 @@ public static class DependencyInjection
                     EntityProperties: [],
                     GenerateEntityFactoryMethod: false,
                     GenerateEntityEfMapping: false,
-                    GenerateEntityInterface: false,
                     EntityDomainMethods: [],
                     EntityEfMappingFields: null,
                     AddDependencyInjectionRegistration: false,

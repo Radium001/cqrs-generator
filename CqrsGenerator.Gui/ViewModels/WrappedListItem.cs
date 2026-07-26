@@ -9,7 +9,6 @@ public sealed class WrappedListItem : INotifyPropertyChanged
     private string _baseName;
     private string? _iconGeometry;
     private bool _isSelected;
-    private bool _isRuntime;
     private bool _canEdit;
     private bool _canRemove;
     private string? _primaryText;
@@ -81,19 +80,6 @@ public sealed class WrappedListItem : INotifyPropertyChanged
             if (_isSelected != value)
             {
                 _isSelected = value;
-                OnPropertyChanged();
-            }
-        }
-    }
-
-    public bool IsRuntime
-    {
-        get => _isRuntime;
-        set
-        {
-            if (_isRuntime != value)
-            {
-                _isRuntime = value;
                 OnPropertyChanged();
             }
         }

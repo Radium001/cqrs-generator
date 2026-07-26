@@ -30,7 +30,7 @@ public sealed class QueryGenerator(GeneratorConfig config, ScribanTemplateRender
                 @namespace = queryNamespace,
                 query_type = queryType,
                 response_type = responseType,
-                usings_block = CreateQueryUsings(request.ResponseShape, dtoNamespace),
+                usings_block = CreateQueryUsings(request.ResponseShape, dtoNamespace, request.Properties),
                 has_properties = request.Properties.Count > 0,
                 constructor_parameters = string.Join(", ", request.Properties.Select(ToConstructorParameter)),
                 constructor_assignments = string.Join("", request.Properties.Select(property => $"            {property.Name} = {StringUtilities.ToCamelCase(property.Name)};\n")),
@@ -60,6 +60,7 @@ public sealed class QueryGenerator(GeneratorConfig config, ScribanTemplateRender
                 service_type = request.ServiceInterfaceName ?? "",
                 service_field = serviceField,
                 service_parameter = serviceParameter,
+                is_async = hasService && request.GenerateHandlerBody && request.ServiceMethodName is not null,
                 handler_body = handlerBody,
             }));
 
@@ -84,6 +85,7 @@ public sealed class QueryGenerator(GeneratorConfig config, ScribanTemplateRender
             {
                 throw new ArgumentException("Property type is required.", nameof(property.Type));
             }
+            CSharpTypeMetadataResolver.EnsureValid(property.Type, nameof(property.Type));
         }
     }
 
@@ -98,9 +100,14 @@ public sealed class QueryGenerator(GeneratorConfig config, ScribanTemplateRender
         _ => throw new ArgumentOutOfRangeException(nameof(shape), shape, "Unknown response shape."),
     };
 
-    private static string CreateQueryUsings(ResponseShape responseShape, string dtoNamespace)
+    private static string CreateQueryUsings(
+        ResponseShape responseShape,
+        string dtoNamespace,
+        IReadOnlyList<PropertySpec> properties)
     {
-        var usings = new List<string>();
+        var usings = CSharpTypeMetadataResolver.GetNamespaces(properties.Select(property => property.Type))
+            .Select(@namespace => $"using {@namespace};")
+            .ToHashSet(StringComparer.Ordinal);
         if (responseShape is ResponseShape.List or ResponseShape.Enumerable)
         {
             usings.Add("using System.Collections.Generic;");
@@ -111,7 +118,7 @@ public sealed class QueryGenerator(GeneratorConfig config, ScribanTemplateRender
             usings.Add($"using {dtoNamespace};");
         }
 
-        return string.Join("\n", usings);
+        return string.Join("\n", usings.OrderBy(value => value, StringComparer.Ordinal));
     }
 
     private static string ToConstructorParameter(PropertySpec property) =>

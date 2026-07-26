@@ -12,7 +12,6 @@ public sealed class GenerationSessionPlanBuilder
         [GeneratorNodeKind.Repository] = 3,
         [GeneratorNodeKind.Query] = 4,
         [GeneratorNodeKind.Command] = 5,
-        [GeneratorNodeKind.WebPage] = 6,
     };
 
     private readonly GeneratorDefinitionCatalog _definitionCatalog;

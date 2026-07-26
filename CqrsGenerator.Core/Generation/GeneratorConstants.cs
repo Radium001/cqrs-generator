@@ -3,7 +3,10 @@ namespace CqrsGenerator.Core.Generation;
 public static class GeneratorConstants
 {
     public static readonly string[] QueryVerbPrefixes = ["Get", "Find", "Fetch", "Search", "List", "Load"];
-    public static readonly string[] CommandVerbPrefixes = ["Create", "Update", "Delete"];
+    public const string CreateCommandPrefix = "Create";
+    public const string UpdateCommandPrefix = "Update";
+    public const string DeleteCommandPrefix = "Delete";
+    public static readonly string[] CommandVerbPrefixes = [CreateCommandPrefix, UpdateCommandPrefix, DeleteCommandPrefix];
 
     public const string QuerySuffix = "Query";
     public const string CommandSuffix = "Command";
@@ -24,7 +27,6 @@ public static class GeneratorConstants
     public const string QueryServiceImplementationPattern = "{0}QueryService";
     public const string RepositoryInterfacePattern = "I{0}Repository";
     public const string RepositoryImplementationPattern = "{0}Repository";
-    public const string EntityInterfacePattern = "I{0}Entity";
     public const string QueryClassPattern = "{0}Query";
     public const string HandlerClassPattern = "{0}Handler";
     public const string CommandClassPattern = "{0}Command";

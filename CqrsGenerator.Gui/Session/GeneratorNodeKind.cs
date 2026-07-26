@@ -8,5 +8,4 @@ public enum GeneratorNodeKind
     Command,
     Repository,
     Entity,
-    WebPage,
 }

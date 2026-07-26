@@ -78,7 +78,6 @@ public sealed class AddEntityRequestBuilder : IAddEntityRequestBuilder
                     Properties = finalProperties,
                     GenerateFactoryMethod = formState.GenerateFactoryMethod,
                     GenerateEfMapping = formState.GenerateEfMapping,
-                    GenerateInterface = formState.GenerateInterface,
                     DomainMethods = formState.DomainMethods.Select(methodName => methodName.Trim()).ToArray(),
                     EfMappingFields = efMappingFields,
                 });

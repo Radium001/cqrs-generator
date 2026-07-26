@@ -6,8 +6,11 @@ public sealed record AddCommandFormState(
     string? FeatureName,
     string? FeaturePath,
     string CommandName,
-    string? ResponseType,
     IReadOnlyList<PropertySpec> Properties,
     IReadOnlyList<CommandHandlerDependency> Dependencies,
-    IReadOnlyList<object> RepositoryDrafts,
-    bool UpdateWebImports);
+    string? WebFeaturePath)
+{
+    public bool GenerateHandlerBody { get; init; } = true;
+
+    public CommandHandlerScaffoldContext? HandlerScaffoldContext { get; init; }
+}

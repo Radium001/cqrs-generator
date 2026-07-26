@@ -7,7 +7,7 @@ public static class RepositoryMethodCatalog
     public static readonly RepositoryMethodPreset GetById = new("get-by-id", GeneratorConstants.RepoMethodGetById, true);
     public static readonly RepositoryMethodPreset Add = new("add", GeneratorConstants.RepoMethodAdd, true);
     public static readonly RepositoryMethodPreset Update = new("update", GeneratorConstants.RepoMethodUpdate, true);
-    public static readonly RepositoryMethodPreset Delete = new("delete", GeneratorConstants.RepoMethodDelete, false);
+    public static readonly RepositoryMethodPreset Delete = new("delete", GeneratorConstants.RepoMethodDelete, true);
 
     public static IReadOnlyList<RepositoryMethodPreset> Presets { get; } =
     [

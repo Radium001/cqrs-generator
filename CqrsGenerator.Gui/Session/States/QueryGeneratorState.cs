@@ -31,7 +31,9 @@ public sealed class QueryGeneratorState
 
     public bool GenerateQueryServiceBody { get; set; } = true;
 
-    public bool UpdateWebImports { get; set; } = true;
+    public ArtifactRef? WebFeatureRef { get; set; }
+
+    public bool HasWebFeatureSelection { get; set; }
 
     private static ArtifactRef? CreateProjectFeatureRef(string? featurePath)
     {

@@ -18,7 +18,6 @@ public sealed partial class RepositoryRootSessionViewModel : ObservableObject,
 {
     private readonly GenerationActionDescriptor? _actionDescriptor;
     private readonly IAddRepositoryPlanService _planService;
-    private readonly IAddRepositoryScenarioOutlineBuilder _scenarioOutlineBuilder;
     private readonly bool _isStandalone;
     private RepositoryGeneratorState? _sessionState;
     private ProjectModel? _projectModel;
@@ -32,16 +31,11 @@ public sealed partial class RepositoryRootSessionViewModel : ObservableObject,
     public RepositoryRootSessionViewModel(
         GenerationActionDescriptor? actionDescriptor,
         IAddRepositoryPlanService planService,
-        IAddRepositoryScenarioOutlineBuilder scenarioOutlineBuilder,
-        IAddEntityPlanService entityPlanService,
-        IAddEntityScenarioOutlineBuilder entityScenarioOutlineBuilder,
-        EfEntityPreparationService efEntityPreparationService,
         bool isStandalone,
         GeneratorNode? node = null)
     {
         _actionDescriptor = actionDescriptor;
         _planService = planService;
-        _scenarioOutlineBuilder = scenarioOutlineBuilder;
         _isStandalone = isStandalone;
         _node = node;
         _sessionState = node?.State as RepositoryGeneratorState;
@@ -201,7 +195,7 @@ public sealed partial class RepositoryRootSessionViewModel : ObservableObject,
 
         if (project is null)
         {
-            EntityPicker.RawItems = AvailableEntities;
+            EntityPicker.Items = AvailableEntities;
             return;
         }
 
@@ -211,7 +205,7 @@ public sealed partial class RepositoryRootSessionViewModel : ObservableObject,
             AvailableEntities.Add(entity);
         }
 
-        EntityPicker.RawItems = AvailableEntities;
+        EntityPicker.Items = AvailableEntities;
 
         var match = AvailableEntities.FirstOrDefault(entity =>
                         previousEntityRef is not null &&

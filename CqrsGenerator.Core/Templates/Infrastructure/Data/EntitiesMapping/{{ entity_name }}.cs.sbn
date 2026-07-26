@@ -6,10 +6,6 @@ namespace {{ namespace }}
 {
     public partial class {{ entity_name }} : IEfEntity
     {
-        public {{ entity_name }}()
-        {
-        }
-
         public {{ entity_name }}(Entity entity)
             : this()
         {

@@ -53,8 +53,8 @@
                         Spacing="8">
               <CheckBox Content="Generate handler body"
                         IsChecked="{Binding GenerateHandlerBody, Mode=TwoWay}" />
-              <CheckBox Content="Update web imports"
-                        IsChecked="{Binding UpdateWebImports, Mode=TwoWay}" />
+              <TextBlock Text="Web imports target" />
+              <shared:WrappedListPicker DataContext="{Binding WebImportsTarget.Picker}" />
             </StackPanel>
           </Grid>
 

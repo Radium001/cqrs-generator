@@ -21,7 +21,6 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
 
     private readonly GenerationActionDescriptor? _actionDescriptor;
     private readonly IAddDtoPlanService _planService;
-    private readonly IAddDtoScenarioOutlineBuilder _scenarioOutlineBuilder;
     private readonly bool _isStandalone;
     private readonly FeatureItemViewModel? _fixedFeature;
     private DtoGeneratorState? _sessionState;
@@ -36,14 +35,12 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
     public DtoRootSessionViewModel(
         GenerationActionDescriptor? actionDescriptor,
         IAddDtoPlanService planService,
-        IAddDtoScenarioOutlineBuilder scenarioOutlineBuilder,
         bool isStandalone,
         FeatureItemViewModel? fixedFeature = null,
         GeneratorNode? node = null)
     {
         _actionDescriptor = actionDescriptor;
         _planService = planService;
-        _scenarioOutlineBuilder = scenarioOutlineBuilder;
         _isStandalone = isStandalone;
         _fixedFeature = fixedFeature;
         Node = node;
@@ -61,6 +58,16 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
             ItemKeySelector = item => item is FeatureItemViewModel f && f.Ref is not null ? ArtifactKey.From(f.Ref).Value : item?.ToString() ?? string.Empty,
         };
         FeaturePicker.PropertyChanged += OnFeaturePickerChanged;
+        WebImportsTarget = new WebImportsTargetPickerViewModel();
+        WebImportsTarget.SelectionChanged += () =>
+        {
+            if (_sessionState is not null)
+            {
+                _sessionState.HasWebFeatureSelection = true;
+            }
+            SyncToSessionState();
+            OnPropertyChanged(nameof(HasUnsavedChanges));
+        };
 
         DtoNameCyclic = new CyclicInputViewModel
         {
@@ -121,7 +128,8 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
     public bool HasUnsavedChanges =>
         SelectedFeature is not null ||
         !string.IsNullOrWhiteSpace(DtoNameCyclic.Text) ||
-        Parameters.Count > 0;
+        Parameters.Count > 0 ||
+        WebImportsTarget.SelectedRef is not null;
 
     public bool CanClose => true;
 
@@ -141,6 +149,8 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
         Parameters.All(property => property.IsComplete);
 
     public WrappedListPickerViewModel FeaturePicker { get; }
+
+    public WebImportsTargetPickerViewModel WebImportsTarget { get; }
 
     public CyclicInputViewModel DtoNameCyclic { get; }
 
@@ -164,9 +174,6 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
     [NotifyPropertyChangedFor(nameof(CanComplete))]
     [NotifyPropertyChangedFor(nameof(HasUnsavedChanges))]
     private string _dtoName = string.Empty;
-
-    [ObservableProperty]
-    private bool _updateWebImports = true;
 
     [ObservableProperty]
     private string _statusText = "Configure DTO.";
@@ -218,6 +225,10 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
 
         SubfolderPicker.Items = items;
         RestoreSubfolderSelection(_sessionState?.Subfolder);
+        if (!_isSyncingFeature)
+        {
+            WebImportsTarget.SelectDefaultForFeature(value?.RelativePath);
+        }
     }
 
     private void ReloadProject(ProjectModel? project)
@@ -233,6 +244,7 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
         {
             FeatureItems.Clear();
             FeaturePicker.Items = FeatureItems;
+            WebImportsTarget.Clear();
             return;
         }
 
@@ -277,6 +289,11 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
             FeaturePicker.SelectRawItem(selected);
         }
         _isSyncingFeature = false;
+        WebImportsTarget.Reload(
+            project,
+            SelectedFeature?.RelativePath,
+            _sessionState?.WebFeatureRef,
+            _sessionState?.HasWebFeatureSelection == true);
 
         _isSyncingDtoName = true;
         DtoName = DtoNameCyclic.FullText;
@@ -311,12 +328,6 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
             OnPropertyChanged(nameof(CanComplete));
             OnPropertyChanged(nameof(HasUnsavedChanges));
         }
-    }
-
-    partial void OnUpdateWebImportsChanged(bool value)
-    {
-        SyncToSessionState();
-        OnPropertyChanged(nameof(HasUnsavedChanges));
     }
 
     partial void OnDtoNameChanged(string value)
@@ -410,7 +421,7 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
         if (_sessionState is null || _isLoadingFromState) return;
         _sessionState.BaseName = DtoNameCyclic.Text.Trim();
         _sessionState.SuffixIndex = DtoNameCyclic.SelectedIndex;
-        _sessionState.UpdateWebImports = UpdateWebImports;
+        _sessionState.WebFeatureRef = WebImportsTarget.SelectedRef;
         _sessionState.Subfolder = GetSubfolder();
         _sessionState.FeatureRef = SelectedFeature?.Ref;
         _sessionState.Properties.Clear();
@@ -431,8 +442,6 @@ public sealed partial class DtoRootSessionViewModel : ObservableObject,
             DtoNameCyclic.Text = state.BaseName;
             DtoName = DtoNameCyclic.FullText;
             _isSyncingDtoName = false;
-
-            UpdateWebImports = state.UpdateWebImports;
 
             foreach (var parameter in Parameters)
             {

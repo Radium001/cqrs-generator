@@ -30,29 +30,6 @@ public sealed class RepositoryGeneratorState
         set => _entityRef = value;
     }
 
-    public Guid? EntityNodeId
-    {
-        get => EntityRef?.NodeId;
-        set
-        {
-            if (!value.HasValue)
-            {
-                if (EntityRef?.IsFromSession == true)
-                {
-                    EntityRef = null;
-                }
-
-                return;
-            }
-
-            EntityRef = new ArtifactRef(
-                GeneratorNodeKind.Entity,
-                ArtifactOrigin.Session,
-                EntityRef?.Name ?? string.Empty,
-                value);
-        }
-    }
-
     public bool AddDependencyInjectionRegistration { get; set; } = true;
 
     public ObservableCollection<string> SelectedMethodPresetKeys { get; } = new();

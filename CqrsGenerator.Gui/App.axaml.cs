@@ -58,13 +58,6 @@ public partial class App : Application
         services.AddSingleton<IPlanPreviewService, PlanPreviewService>();
         services.AddSingleton<IDiffService, DiffService>();
         services.AddSingleton<IAddQueryRequestBuilder, AddQueryRequestBuilder>();
-        services.AddSingleton<IAddQueryScenarioOutlineBuilder, AddQueryScenarioOutlineBuilder>();
-        services.AddSingleton<IAddCommandScenarioOutlineBuilder, AddCommandScenarioOutlineBuilder>();
-        services.AddSingleton<IAddDtoScenarioOutlineBuilder, AddDtoScenarioOutlineBuilder>();
-        services.AddSingleton<IAddEntityScenarioOutlineBuilder, AddEntityScenarioOutlineBuilder>();
-        services.AddSingleton<IAddRepositoryScenarioOutlineBuilder, AddRepositoryScenarioOutlineBuilder>();
-        services.AddSingleton<IAddWebPageScenarioOutlineBuilder, AddWebPageScenarioOutlineBuilder>();
-        services.AddSingleton<ICreateFeatureScenarioOutlineBuilder, CreateFeatureScenarioOutlineBuilder>();
         services.AddSingleton<ICreateFeaturePlanService, CreateFeaturePlanService>();
         services.AddSingleton<IQueryServiceSuggestionService, QueryServiceSuggestionService>();
         services.AddSingleton<IAddQueryPlanService, AddQueryPlanService>();
@@ -76,7 +69,6 @@ public partial class App : Application
         services.AddSingleton<IAddRepositoryPlanService, AddRepositoryPlanService>();
         services.AddSingleton<IAddCommandRequestBuilder, AddCommandRequestBuilder>();
         services.AddSingleton<IAddCommandPlanService, AddCommandPlanService>();
-        services.AddSingleton<IAddWebPagePlanService, AddWebPagePlanService>();
 
         services.AddSingleton<IProjectOpenService>(_ => new ProjectOpenService(mainWindow));
         services.AddSingleton<IDialogService>(_ => new DialogService(mainWindow));
@@ -93,7 +85,6 @@ public partial class App : Application
         services.AddSingleton<IGeneratorDefinition>(new CommandGeneratorDefinition());
         services.AddSingleton<IGeneratorDefinition>(new RepositoryGeneratorDefinition());
         services.AddSingleton<IGeneratorDefinition>(new EntityGeneratorDefinition());
-        services.AddSingleton<IGeneratorDefinition>(new WebPageGeneratorDefinition());
         services.AddSingleton<IGeneratorDefinition>(new FeatureGeneratorDefinition());
         services.AddSingleton<GeneratorDefinitionCatalog>();
         services.AddSingleton<GenerationSessionValidationService>();
@@ -104,55 +95,29 @@ public partial class App : Application
             new AddQueryScenarioDefinition(() => new AddQueryRootSessionViewModel(
                 new GenerationActionDescriptor("add-query", "Add Query", "Application", "Ready", true),
                 provider.GetRequiredService<IAddQueryPlanService>(),
-                provider.GetRequiredService<IAddDtoPlanService>(),
-                provider.GetRequiredService<IAddDtoScenarioOutlineBuilder>(),
-                provider.GetRequiredService<IQueryServiceSuggestionService>(),
-                provider.GetRequiredService<IAddQueryScenarioOutlineBuilder>(),
-                createFeaturePlanService: provider.GetRequiredService<ICreateFeaturePlanService>(),
-                createFeatureScenarioOutlineBuilder: provider.GetRequiredService<ICreateFeatureScenarioOutlineBuilder>())));
-
-        services.AddSingleton<IGeneratorScenarioDefinition>(provider =>
-            new AddWebPageScenarioDefinition(() => new AddWebPageRootSessionViewModel(
-                new GenerationActionDescriptor("add-web-page", "Add Web Page", "UI", "Ready", true),
-                provider.GetRequiredService<IAddWebPagePlanService>(),
-                provider.GetRequiredService<IAddQueryPlanService>(),
-                provider.GetRequiredService<IAddQueryScenarioOutlineBuilder>(),
-                provider.GetRequiredService<IAddWebPageScenarioOutlineBuilder>(),
                 provider.GetRequiredService<IQueryServiceSuggestionService>())));
 
         services.AddSingleton<IGeneratorScenarioDefinition>(provider =>
             new AddDtoScenarioDefinition(() => new DtoRootSessionViewModel(
                 new GenerationActionDescriptor("add-dto", "Add DTO", "Application", "Ready", true),
                 provider.GetRequiredService<IAddDtoPlanService>(),
-                provider.GetRequiredService<IAddDtoScenarioOutlineBuilder>(),
                 isStandalone: true)));
 
         services.AddSingleton<IGeneratorScenarioDefinition>(provider =>
             new AddCommandScenarioDefinition(() => new CommandRootSessionViewModel(
                 new GenerationActionDescriptor("add-command", "Add Command", "Application", "Ready", true),
-                provider.GetRequiredService<IAddCommandPlanService>(),
-                provider.GetRequiredService<IAddCommandScenarioOutlineBuilder>(),
-                provider.GetRequiredService<IAddRepositoryPlanService>(),
-                provider.GetRequiredService<IAddRepositoryScenarioOutlineBuilder>(),
-                provider.GetRequiredService<IAddEntityPlanService>(),
-                provider.GetRequiredService<IAddEntityScenarioOutlineBuilder>(),
-                provider.GetRequiredService<EfEntityPreparationService>())));
+                provider.GetRequiredService<IAddCommandPlanService>())));
 
         services.AddSingleton<IGeneratorScenarioDefinition>(provider =>
             new AddRepositoryScenarioDefinition(() => new RepositoryRootSessionViewModel(
                 new GenerationActionDescriptor("add-repository", "Add Repository", "Application", "Ready", true),
                 provider.GetRequiredService<IAddRepositoryPlanService>(),
-                provider.GetRequiredService<IAddRepositoryScenarioOutlineBuilder>(),
-                provider.GetRequiredService<IAddEntityPlanService>(),
-                provider.GetRequiredService<IAddEntityScenarioOutlineBuilder>(),
-                provider.GetRequiredService<EfEntityPreparationService>(),
                 isStandalone: true)));
 
         services.AddSingleton<IGeneratorScenarioDefinition>(provider =>
             new AddEntityScenarioDefinition(() => new EntityRootSessionViewModel(
                 new GenerationActionDescriptor("add-entity", "Add Entity", "Domain", "Ready", true),
                 provider.GetRequiredService<IAddEntityPlanService>(),
-                provider.GetRequiredService<IAddEntityScenarioOutlineBuilder>(),
                 provider.GetRequiredService<EfEntityPreparationService>(),
                 isStandalone: true)));
 
@@ -160,7 +125,6 @@ public partial class App : Application
             new CreateFeatureScenarioDefinition(() => new CreateFeatureRootSessionViewModel(
                 new GenerationActionDescriptor("new-feature", "New Feature", "Application", "Ready", true),
                 provider.GetRequiredService<ICreateFeaturePlanService>(),
-                provider.GetRequiredService<ICreateFeatureScenarioOutlineBuilder>(),
                 isStandalone: true)));
 
         services.AddSingleton<IGeneratorCatalog, GeneratorCatalog>();

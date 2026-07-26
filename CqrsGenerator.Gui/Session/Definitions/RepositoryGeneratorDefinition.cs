@@ -26,14 +26,9 @@ public sealed class RepositoryGeneratorDefinition : GeneratorDefinition<Reposito
         GeneratorSessionServices services)
     {
         var planService = services.ServiceProvider.GetRequiredService<IAddRepositoryPlanService>();
-        var scenarioOutlineBuilder = services.ServiceProvider.GetRequiredService<IAddRepositoryScenarioOutlineBuilder>();
         var vm = new RepositoryRootSessionViewModel(
             actionDescriptor: null,
             planService,
-            scenarioOutlineBuilder,
-            null!,
-            null!,
-            null!,
             isStandalone: false,
             node: node);
         vm.SetGenerationSession(session, services.Navigator);

@@ -4,52 +4,36 @@ namespace CqrsGenerator.Tests;
 
 public class TemplatesTests
 {
-    // ── TemplateCatalog ──
-
     [Fact]
-    public void GetBuiltIn_Query_ReturnsTemplateWithIQuery()
+    public void TemplateProvider_DefaultRoot_ResolvesEveryRegisteredTemplate()
     {
-        var result = TemplateCatalog.GetBuiltIn(TemplateNames.Query);
-        Assert.Contains("IQuery<", result);
-        Assert.Contains("using Application.Common.Interfaces;", result);
-    }
+        var provider = new TemplateProvider();
+        var templateNames = typeof(TemplateNames)
+            .GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+            .Where(field => field.IsLiteral && field.FieldType == typeof(string))
+            .Select(field => Assert.IsType<string>(field.GetRawConstantValue()))
+            .ToArray();
 
-    [Fact]
-    public void GetBuiltIn_Handler_ReturnsTemplateWithIRequestHandler()
-    {
-        var result = TemplateCatalog.GetBuiltIn(TemplateNames.Handler);
-        Assert.Contains("IRequestHandler<", result);
-        Assert.Contains("using MediatR;", result);
-    }
-
-    [Fact]
-    public void GetBuiltIn_Dto_ReturnsTemplateWithPublicClass()
-    {
-        var result = TemplateCatalog.GetBuiltIn(TemplateNames.Dto);
-        Assert.Contains("public class ", result);
-    }
-
-    [Fact]
-    public void GetBuiltIn_UnknownName_ThrowsArgumentOutOfRange()
-    {
-        Assert.Throws<ArgumentOutOfRangeException>(() =>
-            TemplateCatalog.GetBuiltIn("unknown_template"));
+        Assert.NotEmpty(templateNames);
+        foreach (var templateName in templateNames)
+        {
+            Assert.False(string.IsNullOrWhiteSpace(provider.GetTemplate(templateName)));
+        }
     }
 
     // ── TemplateProvider ──
 
     [Fact]
-    public void TemplateProvider_ExplicitRoot_UsesThatRoot()
+    public void TemplateProvider_ExplicitRoot_ReportsMissingAsset()
     {
         using var tmp = new TempDir();
-        File.WriteAllText(Path.Combine(tmp.Path, "test.sbn"), "content");
-
-        // TemplateProvider with explicit root doesn't fall back — it looks for 
-        // the file in the given root and if not found, falls back to built-in.
-        // Test: find an existing built-in template via the explicit provider.
         var provider = new TemplateProvider(tmp.Path);
-        var result = provider.GetTemplate(TemplateNames.Query);
-        Assert.Contains("IQuery<", result);
+
+        var exception = Assert.Throws<FileNotFoundException>(() =>
+            provider.GetTemplate(TemplateNames.Query));
+
+        Assert.Contains(TemplateNames.Query, exception.Message);
+        Assert.Contains(tmp.Path, exception.Message);
     }
 
     [Fact]
@@ -66,12 +50,11 @@ public class TemplatesTests
     }
 
     [Fact]
-    public void TemplateProvider_FileMissing_FallsBackToBuiltIn()
+    public void TemplateProvider_FileMissing_Throws()
     {
         using var tmp = new TempDir();
         var provider = new TemplateProvider(tmp.Path);
-        var result = provider.GetTemplate(TemplateNames.Dto);
-        Assert.Contains("public class ", result);
+        Assert.Throws<FileNotFoundException>(() => provider.GetTemplate(TemplateNames.Dto));
     }
 
     [Fact]

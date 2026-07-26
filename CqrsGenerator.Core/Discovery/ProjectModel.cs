@@ -1,3 +1,5 @@
+using CqrsGenerator.Core.Generation;
+
 namespace CqrsGenerator.Core.Discovery;
 
 public sealed record ProjectPaths(
@@ -51,7 +53,12 @@ public sealed record QueryServiceInfo(
     QueryServiceImplementationPlacement ImplementationPlacement = QueryServiceImplementationPlacement.Missing,
     int ImplementationCandidateCount = 0);
 
-public sealed record RepositoryInfo(string InterfaceName, string Path);
+public sealed record RepositoryInfo(string InterfaceName, string Path)
+{
+    public string? EntityName { get; init; }
+
+    public IReadOnlyList<CommandHandlerMethodContract> Methods { get; init; } = [];
+}
 
 public sealed record WebFeatureInfo(string Name, string RelativePath, string Path);
 
@@ -59,7 +66,10 @@ public sealed record DiRegistrationInfo(string ServiceType, string Implementatio
 
 public sealed record DependencyInjectionInfo(string Path, IReadOnlyList<DiRegistrationInfo> Registrations);
 
-public sealed record EntityInfo(string Name, string Path, string DisplayName, string Namespace, string? RelativePath);
+public sealed record EntityInfo(string Name, string Path, string DisplayName, string Namespace, string? RelativePath)
+{
+    public IReadOnlyList<CommandHandlerMethodContract> Methods { get; init; } = [];
+}
 
 public sealed class ProjectModel
 {

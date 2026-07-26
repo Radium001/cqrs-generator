@@ -23,13 +23,6 @@ public sealed class AddCommandRequestBuilder : IAddCommandRequestBuilder
             var commandName = formState.CommandName.Trim();
             CSharpNameValidator.EnsureIdentifier(commandName, nameof(formState.CommandName));
 
-            string? responseType = null;
-            if (formState.ResponseType is not null)
-            {
-                responseType = formState.ResponseType.Trim();
-                CSharpNameValidator.EnsureIdentifier(responseType, nameof(formState.ResponseType));
-            }
-
             foreach (var parameter in formState.Properties)
             {
                 CSharpNameValidator.EnsureIdentifier(parameter.Name, nameof(parameter.Name));
@@ -42,10 +35,13 @@ public sealed class AddCommandRequestBuilder : IAddCommandRequestBuilder
                     new AddCommandWorkflowRequest(
                         formState.FeaturePath,
                         commandName,
-                        responseType,
                         formState.Properties,
                         formState.Dependencies,
-                        formState.UpdateWebImports),
+                        formState.WebFeaturePath)
+                    {
+                        GenerateHandlerBody = formState.GenerateHandlerBody,
+                        HandlerScaffoldContext = formState.HandlerScaffoldContext,
+                    },
                     repositoryRequests));
         }
         catch (ArgumentException ex)

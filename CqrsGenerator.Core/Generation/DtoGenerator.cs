@@ -16,9 +16,11 @@ public sealed class DtoGenerator(GeneratorConfig config, ScribanTemplateRenderer
         var dtoDirectory = string.IsNullOrWhiteSpace(normalizedSubfolder)
             ? Path.Combine(GetFeatureRoot(featurePath), config.DtoFolderName)
             : Path.Combine(GetFeatureRoot(featurePath), config.DtoFolderName, normalizedSubfolder.Replace('/', Path.DirectorySeparatorChar));
-        var dtoNamespace = normalizedSubfolder is null
-            ? StringUtilities.ToNamespace(config.RootNamespace, config.FeatureRoot, featurePath, config.DtoFolderName)
-            : StringUtilities.ToNamespace(config.RootNamespace, config.FeatureRoot, featurePath, config.DtoFolderName, normalizedSubfolder);
+        var dtoNamespace = StringUtilities.ToNamespace(
+            config.RootNamespace,
+            config.FeatureRoot,
+            featurePath,
+            config.DtoFolderName);
 
         plan.AddCreateFile(
             Path.Combine(dtoDirectory, $"{request.DtoName}.cs"),
@@ -27,6 +29,7 @@ public sealed class DtoGenerator(GeneratorConfig config, ScribanTemplateRenderer
                 feature_path = featurePath,
                 dto_type = request.DtoName,
                 @namespace = dtoNamespace,
+                usings_block = CSharpTypeMetadataResolver.CreateUsingsBlock(request.Properties.Select(property => property.Type)),
                 has_properties = request.Properties.Count > 0,
                 properties_block = string.Join("\n", request.Properties.Select(property => $"        public {property.Type} {property.Name} {{ get; set; }}")),
             }));
@@ -47,6 +50,7 @@ public sealed class DtoGenerator(GeneratorConfig config, ScribanTemplateRenderer
             {
                 throw new ArgumentException("Property type is required.", nameof(property.Type));
             }
+            CSharpTypeMetadataResolver.EnsureValid(property.Type, nameof(property.Type));
         }
     }
 

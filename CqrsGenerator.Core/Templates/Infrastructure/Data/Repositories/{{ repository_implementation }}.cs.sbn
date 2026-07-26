@@ -2,8 +2,11 @@ using {{ interface_namespace }};
 using {{ entity_namespace }};
 using Infrastructure.Common.Abstractions;
 using Infrastructure.Data.IdTracking;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
+{{ if usings_block != "" }}{{ usings_block }}
+{{ end }}
 using EfEntity = Infrastructure.Data.Entities.{{ entity_name }};
 
 namespace {{ namespace }}

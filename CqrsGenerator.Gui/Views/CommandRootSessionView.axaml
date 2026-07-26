@@ -12,7 +12,7 @@
               BorderBrush="{DynamicResource BorderBrush}"
               BorderThickness="1"
               CornerRadius="6">
-        <Grid ColumnDefinitions="*,*,*"
+        <Grid ColumnDefinitions="*,*"
               ColumnSpacing="16">
           <Grid RowDefinitions="Auto,*,Auto"
                 RowSpacing="8"
@@ -47,28 +47,13 @@
             <shared:CyclicInput Grid.Row="1"
                                 DataContext="{Binding CommandNameCyclic}"
                                 HorizontalAlignment="Stretch" />
-            <CheckBox Grid.Row="2"
-                      Content="Update web imports"
-                      IsChecked="{Binding UpdateWebImports, Mode=TwoWay}" />
-          </Grid>
-
-          <Grid Grid.Column="2"
-                RowDefinitions="Auto,Auto,Auto"
-                RowSpacing="8"
-                HorizontalAlignment="Stretch">
-            <TextBlock Text="Response (optional)"
-                       FontWeight="SemiBold" />
-            <CheckBox Grid.Row="1"
-                      Content="Command returns a value"
-                      IsChecked="{Binding HasResponseType, Mode=TwoWay}" />
-            <Grid Grid.Row="2"
-                  IsVisible="{Binding HasResponseType}">
-              <Grid RowDefinitions="Auto"
-                    RowSpacing="8">
-                <shared:WrappedListPicker DataContext="{Binding ResultTypePicker}"
-                                          HorizontalAlignment="Stretch" />
-              </Grid>
-            </Grid>
+            <StackPanel Grid.Row="2"
+                        Spacing="4">
+              <CheckBox Content="Generate handler body"
+                        IsChecked="{Binding GenerateHandlerBody, Mode=TwoWay}" />
+              <TextBlock Text="Web imports target" />
+              <shared:WrappedListPicker DataContext="{Binding WebImportsTarget.Picker}" />
+            </StackPanel>
           </Grid>
         </Grid>
       </Border>

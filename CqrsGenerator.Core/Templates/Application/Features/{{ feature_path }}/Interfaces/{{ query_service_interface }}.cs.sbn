@@ -1,4 +1,7 @@
-using System.Threading;
+{{ if needs_collections }}using System.Collections.Generic;
+{{ end }}{{ if usings_block != "" }}{{ usings_block }}
+{{ end }}{{ if dto_namespace != "" }}using {{ dto_namespace }};
+{{ end }}using System.Threading;
 using System.Threading.Tasks;
 
 namespace {{ namespace }}
